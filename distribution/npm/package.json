@@ -1,0 +1,40 @@
+{
+  "name": "@omdr/cli",
+  "version": "0.1.0",
+  "description": "CLI for the Open MCP Directory - discover, install, and manage MCP servers",
+  "bin": {
+    "omdr": "./bin/omdr.js"
+  },
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/openmcpdirectory/omdr-cli.git"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "ai",
+    "cli",
+    "omdr"
+  ],
+  "author": "OMDR Team",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/openmcpdirectory/omdr-cli/issues"
+  },
+  "homepage": "https://github.com/openmcpdirectory/omdr-cli#readme",
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "engines": {
+    "node": ">=16"
+  }
+}

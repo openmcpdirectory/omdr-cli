@@ -1,0 +1,219 @@
+package cmd
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/openmcpdirectory/omdr/internal/cli/client"
+	"github.com/openmcpdirectory/omdr/internal/cli/config"
+	"github.com/openmcpdirectory/omdr/internal/cli/detector"
+	"github.com/openmcpdirectory/omdr/internal/cli/installer"
+	clilogger "github.com/openmcpdirectory/omdr/internal/cli/logger"
+	"github.com/openmcpdirectory/omdr/internal/cli/runtime"
+	"github.com/openmcpdirectory/omdr/internal/entity"
+	mcpspec "github.com/openmcpdirectory/omdr/pkg/mcp-spec"
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
+)
+
+var (
+	targetClient string
+)
+
+var installCmd = &cobra.Command{
+	Use:   "install <package>",
+	Short: "Install an MCP server",
+	Long:  "Install an MCP server from the registry and configure it in your MCP clients",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		packageName := args[0]
+
+		// Parse package name (format: namespace/name or just name)
+		namespace, name := parsePackageName(packageName)
+
+		// Get API client
+		apiURL := viper.GetString("api_url")
+		if apiURL == "" {
+			apiURL = "http://localhost:8080"
+		}
+
+		apiClient := client.NewClient(apiURL)
+
+		// Get auth token if available
+		mgr, err := config.NewManager()
+		if err != nil {
+			return fmt.Errorf("initializing config manager: %w", err)
+		}
+
+		token, _ := mgr.Get("auth.token")
+		if token != "" {
+			apiClient.SetToken(token)
+			clilogger.Verbose("Using authentication token")
+		}
+
+		// Fetch server manifest from API
+		fmt.Printf("Fetching %s from registry...\n", packageName)
+		clilogger.Verbose("API URL: %s", apiURL)
+		clilogger.Verbose("Request path: /api/v1/servers/%s/%s", namespace, name)
+
+		var serverResp struct {
+			Server  entity.Server        `json:"server"`
+			Version entity.ServerVersion `json:"version"`
+		}
+
+		path := fmt.Sprintf("/api/v1/servers/%s/%s", namespace, name)
+		if err := apiClient.Get(path, &serverResp); err != nil {
+			return fmt.Errorf("fetching server: %w", err)
+		}
+
+		clilogger.Verbose("Server fetched: %s/%s version %s", serverResp.Server.Namespace, serverResp.Server.Name, serverResp.Version.Version)
+
+		// Parse manifest to check runtime requirements
+		var manifest mcpspec.MCPManifest
+		if err := json.Unmarshal(serverResp.Version.Manifest, &manifest); err != nil {
+			return fmt.Errorf("parsing manifest: %w", err)
+		}
+
+		// Check runtime requirements
+		fmt.Println("Checking runtime requirements...")
+		clilogger.Verbose("Runtime type: %s", manifest.Runtime.Type)
+		if err := checkRuntimeRequirements(manifest.Runtime); err != nil {
+			return fmt.Errorf("runtime check failed: %w", err)
+		}
+
+		// Detect installed MCP clients
+		fmt.Println("Detecting MCP clients...")
+		clilogger.Verbose("Scanning for MCP client configurations...")
+		det := detector.NewDetector()
+		clients, err := det.DetectClients()
+		if err != nil {
+			return fmt.Errorf("detecting clients: %w", err)
+		}
+
+		if len(clients) == 0 {
+			return fmt.Errorf("no MCP clients detected. Please install Claude Desktop, Cursor, or VS Code with MCP extension")
+		}
+
+		// Filter by target client if specified
+		if targetClient != "" {
+			clients = filterClientsByType(clients, targetClient)
+			if len(clients) == 0 {
+				return fmt.Errorf("specified client '%s' not found", targetClient)
+			}
+		}
+
+		fmt.Printf("Found %d MCP client(s):\n", len(clients))
+		for _, c := range clients {
+			fmt.Printf("  - %s (%s)\n", c.Name, c.ConfigPath)
+		}
+
+		// Patch client configs
+		patcher := installer.NewConfigPatcher()
+		successCount := 0
+		var lastErr error
+
+		for _, c := range clients {
+			fmt.Printf("\nConfiguring %s...\n", c.Name)
+			if err := patcher.PatchConfig(c, serverResp.Version); err != nil {
+				fmt.Fprintf(os.Stderr, "  Failed to configure %s: %v\n", c.Name, err)
+				lastErr = err
+				continue
+			}
+			fmt.Printf("  ✓ Successfully configured %s\n", c.Name)
+			successCount++
+		}
+
+		// Display results
+		fmt.Println()
+		if successCount == 0 {
+			return fmt.Errorf("failed to configure any clients: %w", lastErr)
+		}
+
+		if successCount < len(clients) {
+			fmt.Printf("⚠ Partially installed: %d/%d clients configured\n", successCount, len(clients))
+		} else {
+			fmt.Println("✓ Installation successful!")
+		}
+
+		fmt.Printf("\nInstalled: %s/%s@%s\n", serverResp.Server.Namespace, serverResp.Server.Name, serverResp.Version.Version)
+		fmt.Printf("Description: %s\n", serverResp.Server.Description)
+
+		if len(manifest.Tools) > 0 {
+			fmt.Printf("Tools: %d\n", len(manifest.Tools))
+		}
+		if len(manifest.Resources) > 0 {
+			fmt.Printf("Resources: %d\n", len(manifest.Resources))
+		}
+		if len(manifest.Prompts) > 0 {
+			fmt.Printf("Prompts: %d\n", len(manifest.Prompts))
+		}
+
+		fmt.Println("\nRestart your MCP client(s) to use the new server.")
+
+		return nil
+	},
+}
+
+// parsePackageName splits a package name into namespace and name
+// Supports formats: "namespace/name" or just "name" (uses default namespace)
+func parsePackageName(pkg string) (namespace, name string) {
+	parts := strings.SplitN(pkg, "/", 2)
+	if len(parts) == 2 {
+		return parts[0], parts[1]
+	}
+	// Default namespace if not specified
+	return "default", parts[0]
+}
+
+// checkRuntimeRequirements verifies that required runtimes are available
+func checkRuntimeRequirements(rt mcpspec.RuntimeConfig) error {
+	switch rt.Type {
+	case "docker":
+		result := runtime.CheckDocker(false)
+		if !result.Available {
+			return fmt.Errorf("Docker is required but not available: %w", result.Error)
+		}
+		fmt.Println("  ✓ Docker is available")
+
+	case "node":
+		result := runtime.CheckNode()
+		if !result.Available {
+			return fmt.Errorf("Node.js is required but not available: %w", result.Error)
+		}
+		fmt.Println("  ✓ Node.js is available")
+
+	case "python":
+		result := runtime.CheckPython()
+		if !result.Available {
+			return fmt.Errorf("Python is required but not available: %w", result.Error)
+		}
+		fmt.Println("  ✓ Python is available")
+
+	default:
+		return fmt.Errorf("unknown runtime type: %s", rt.Type)
+	}
+
+	return nil
+}
+
+// filterClientsByType filters clients by the specified type
+func filterClientsByType(clients []detector.MCPClient, clientType string) []detector.MCPClient {
+	var filtered []detector.MCPClient
+
+	targetType := detector.ClientType(strings.ToLower(clientType))
+
+	for _, c := range clients {
+		if c.Type == targetType {
+			filtered = append(filtered, c)
+		}
+	}
+
+	return filtered
+}
+
+func init() {
+	rootCmd.AddCommand(installCmd)
+	installCmd.Flags().StringVar(&targetClient, "client", "", "Target specific client (claude, cursor, vscode)")
+}

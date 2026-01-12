@@ -1,0 +1,165 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+    - go generate ./...
+
+builds:
+  - id: omdr-cli
+    main: ./cmd/omdr-cli
+    binary: omdr
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+      - arm
+    goarm:
+      - "7"
+    ignore:
+      - goos: windows
+        goarch: arm
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X github.com/openmcpdirectory/omdr-cli/internal/version.Version={{.Version}}
+      - -X github.com/openmcpdirectory/omdr-cli/internal/version.Commit={{.Commit}}
+      - -X github.com/openmcpdirectory/omdr-cli/internal/version.Date={{.Date}}
+
+archives:
+  - id: omdr
+    format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE*
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - Merge pull request
+      - Merge branch
+
+brews:
+  - name: omdr
+    repository:
+      owner: openmcpdirectory
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    folder: Formula
+    homepage: https://github.com/openmcpdirectory/omdr
+    description: "CLI for the Open MCP Directory - discover, install, and manage MCP servers"
+    license: MIT
+    test: |
+      system "#{bin}/omdr", "version"
+    install: |
+      bin.install "omdr"
+
+scoops:
+  - name: omdr
+    repository:
+      owner: openmcpdirectory
+      name: scoop-bucket
+      token: "{{ .Env.SCOOP_BUCKET_GITHUB_TOKEN }}"
+    homepage: https://github.com/openmcpdirectory/omdr-cli
+    description: "CLI for the Open MCP Directory - discover, install, and manage MCP servers"
+    license: MIT
+
+nfpms:
+  - id: omdr
+    package_name: omdr
+    homepage: https://github.com/openmcpdirectory/omdr-cli
+    maintainer: OMDR Team <team@omdr.dev>
+    description: CLI for the Open MCP Directory
+    license: MIT
+    formats:
+      - deb
+      - rpm
+      - apk
+    bindir: /usr/bin
+
+dockers:
+  - image_templates:
+      - "ghcr.io/openmcpdirectory/omdr:{{ .Version }}-amd64"
+      - "ghcr.io/openmcpdirectory/omdr:latest-amd64"
+    use: buildx
+    dockerfile: Dockerfile.cli
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+  - image_templates:
+      - "ghcr.io/openmcpdirectory/omdr:{{ .Version }}-arm64"
+      - "ghcr.io/openmcpdirectory/omdr:latest-arm64"
+    use: buildx
+    goarch: arm64
+    dockerfile: Dockerfile.cli
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+
+docker_manifests:
+  - name_template: "ghcr.io/openmcpdirectory/omdr:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/openmcpdirectory/omdr:{{ .Version }}-amd64"
+      - "ghcr.io/openmcpdirectory/omdr:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/openmcpdirectory/omdr:latest"
+    image_templates:
+      - "ghcr.io/openmcpdirectory/omdr:latest-amd64"
+      - "ghcr.io/openmcpdirectory/omdr:latest-arm64"
+
+release:
+  github:
+    owner: openmcpdirectory
+    name: omdr-cli
+  draft: false
+  prerelease: auto
+  mode: replace
+  header: |
+    ## OMDR {{ .Tag }} Release
+    
+    Install via:
+    ```bash
+    # macOS/Linux (Homebrew)
+    brew install omdr/tap/omdr
+    
+    # Windows (Scoop)
+    scoop bucket add omdr https://github.com/openmcpdirectory/scoop-bucket
+    scoop install omdr
+    
+    # Go
+    go install github.com/openmcpdirectory/omdr-cli/cmd/omdr@{{ .Tag }}
+    
+    # npm
+    npm install -g @omdr/cli
+    ```
