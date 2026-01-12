@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/openmcpdirectory/omdr/internal/cli/client"
-	"github.com/openmcpdirectory/omdr/internal/cli/config"
+	"github.com/openmcpdirectory/omdr-cli/internal/cli/client"
+	"github.com/openmcpdirectory/omdr-cli/internal/cli/config"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )

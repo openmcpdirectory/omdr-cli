@@ -6,8 +6,8 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/openmcpdirectory/omdr/internal/cli/client"
-	"github.com/openmcpdirectory/omdr/internal/entity"
+	"github.com/openmcpdirectory/omdr-cli/internal/cli/client"
+	"github.com/openmcpdirectory/omdr-cli/internal/entity"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )

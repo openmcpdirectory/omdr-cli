@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	clilogger "github.com/openmcpdirectory/omdr/internal/cli/logger"
+	clilogger "github.com/openmcpdirectory/omdr-cli/internal/cli/logger"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )

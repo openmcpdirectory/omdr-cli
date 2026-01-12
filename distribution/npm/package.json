@@ -19,12 +19,12 @@
     "cli",
     "omdr"
   ],
-  "author": "OMDR Team",
+  "author": "Asman Mirza <asman@omdr.dev>",
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/openmcpdirectory/omdr-cli/issues"
   },
-  "homepage": "https://github.com/openmcpdirectory/omdr-cli#readme",
+  "homepage": "https://openmcpdirectory.com",
   "os": [
     "darwin",
     "linux",

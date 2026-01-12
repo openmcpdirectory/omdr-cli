@@ -86,15 +86,15 @@ scoops:
       owner: openmcpdirectory
       name: scoop-bucket
       token: "{{ .Env.SCOOP_BUCKET_GITHUB_TOKEN }}"
-    homepage: https://github.com/openmcpdirectory/omdr-cli
+    homepage: https://openmcpdirectory.com
     description: "CLI for the Open MCP Directory - discover, install, and manage MCP servers"
     license: MIT
 
 nfpms:
   - id: omdr
     package_name: omdr
-    homepage: https://github.com/openmcpdirectory/omdr-cli
-    maintainer: OMDR Team <team@omdr.dev>
+    homepage: https://openmcpdirectory.com
+    maintainer: Asman Mirza <asman@omdr.dev>
     description: CLI for the Open MCP Directory
     license: MIT
     formats:
@@ -105,10 +105,10 @@ nfpms:
 
 dockers:
   - image_templates:
-      - "ghcr.io/openmcpdirectory/omdr:{{ .Version }}-amd64"
-      - "ghcr.io/openmcpdirectory/omdr:latest-amd64"
+      - "ghcr.io/openmcpdirectory/omdr-cli:{{ .Version }}-amd64"
+      - "ghcr.io/openmcpdirectory/omdr-cli:latest-amd64"
     use: buildx
-    dockerfile: Dockerfile.cli
+    dockerfile: distribution/docker/Dockerfile.cli
     build_flag_templates:
       - "--platform=linux/amd64"
       - "--label=org.opencontainers.image.created={{.Date}}"
@@ -116,11 +116,11 @@ dockers:
       - "--label=org.opencontainers.image.revision={{.FullCommit}}"
       - "--label=org.opencontainers.image.version={{.Version}}"
   - image_templates:
-      - "ghcr.io/openmcpdirectory/omdr:{{ .Version }}-arm64"
-      - "ghcr.io/openmcpdirectory/omdr:latest-arm64"
+      - "ghcr.io/openmcpdirectory/omdr-cli:{{ .Version }}-arm64"
+      - "ghcr.io/openmcpdirectory/omdr-cli:latest-arm64"
     use: buildx
     goarch: arm64
-    dockerfile: Dockerfile.cli
+    dockerfile: distribution/docker/Dockerfile.cli
     build_flag_templates:
       - "--platform=linux/arm64"
       - "--label=org.opencontainers.image.created={{.Date}}"
@@ -129,14 +129,14 @@ dockers:
       - "--label=org.opencontainers.image.version={{.Version}}"
 
 docker_manifests:
-  - name_template: "ghcr.io/openmcpdirectory/omdr:{{ .Version }}"
+  - name_template: "ghcr.io/openmcpdirectory/omdr-cli:{{ .Version }}"
     image_templates:
-      - "ghcr.io/openmcpdirectory/omdr:{{ .Version }}-amd64"
-      - "ghcr.io/openmcpdirectory/omdr:{{ .Version }}-arm64"
-  - name_template: "ghcr.io/openmcpdirectory/omdr:latest"
+      - "ghcr.io/openmcpdirectory/omdr-cli:{{ .Version }}-amd64"
+      - "ghcr.io/openmcpdirectory/omdr-cli:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/openmcpdirectory/omdr-cli:latest"
     image_templates:
-      - "ghcr.io/openmcpdirectory/omdr:latest-amd64"
-      - "ghcr.io/openmcpdirectory/omdr:latest-arm64"
+      - "ghcr.io/openmcpdirectory/omdr-cli:latest-amd64"
+      - "ghcr.io/openmcpdirectory/omdr-cli:latest-arm64"
 
 release:
   github:

@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/openmcpdirectory/omdr/internal/cli/detector"
-	"github.com/openmcpdirectory/omdr/internal/entity"
+	"github.com/openmcpdirectory/omdr-cli/internal/cli/detector"
+	"github.com/openmcpdirectory/omdr-cli/internal/entity"
 )
 
 func TestNewConfigPatcher(t *testing.T) {

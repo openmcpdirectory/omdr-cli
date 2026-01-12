@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/openmcpdirectory/omdr/internal/cli/detector"
-	"github.com/openmcpdirectory/omdr/internal/entity"
-	mcpspec "github.com/openmcpdirectory/omdr/pkg/mcp-spec"
+	"github.com/openmcpdirectory/omdr-cli/internal/cli/detector"
+	"github.com/openmcpdirectory/omdr-cli/internal/entity"
+	mcpspec "github.com/openmcpdirectory/omdr-cli/pkg/mcp-spec"
 )
 
 // ConfigPatcher handles modification of MCP client configuration files

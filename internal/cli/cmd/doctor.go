@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openmcpdirectory/omdr/internal/cli/client"
-	"github.com/openmcpdirectory/omdr/internal/cli/detector"
-	"github.com/openmcpdirectory/omdr/internal/cli/runtime"
+	"github.com/openmcpdirectory/omdr-cli/internal/cli/client"
+	"github.com/openmcpdirectory/omdr-cli/internal/cli/detector"
+	"github.com/openmcpdirectory/omdr-cli/internal/cli/runtime"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )

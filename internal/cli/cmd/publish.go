@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/openmcpdirectory/omdr/internal/cli/client"
-	"github.com/openmcpdirectory/omdr/internal/cli/config"
-	mcpspec "github.com/openmcpdirectory/omdr/pkg/mcp-spec"
+	"github.com/openmcpdirectory/omdr-cli/internal/cli/client"
+	"github.com/openmcpdirectory/omdr-cli/internal/cli/config"
+	mcpspec "github.com/openmcpdirectory/omdr-cli/pkg/mcp-spec"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )

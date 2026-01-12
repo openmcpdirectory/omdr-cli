@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/openmcpdirectory/omdr/internal/cli/config"
+	"github.com/openmcpdirectory/omdr-cli/internal/cli/config"
 	"github.com/spf13/cobra"
 )
 

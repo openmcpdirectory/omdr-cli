@@ -2,11 +2,11 @@
 name = "omdr-cli"
 version = "0.1.0"
 edition = "2024"
-authors = ["OMDR Team"]
+authors = ["Asman Mirza <asman@omdr.dev>"]
 description = "CLI for the Open MCP Directory - discover, install, and manage MCP servers"
 license = "MIT"
 repository = "https://github.com/openmcpdirectory/omdr-cli"
-homepage = "https://github.com/openmcpdirectory/omdr-cli"
+homepage = "https://openmcpdirectory.com"
 keywords = ["mcp", "model-context-protocol", "ai", "cli"]
 categories = ["command-line-utilities"]
 
