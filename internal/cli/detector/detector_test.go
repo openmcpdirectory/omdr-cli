@@ -60,10 +60,10 @@ func TestGetCursorConfigPaths(t *testing.T) {
 		t.Fatal("getCursorConfigPaths returned no paths")
 	}
 
-	// Verify path contains expected components
+	// Verify path contains .cursor directory
 	path := paths[0]
-	if !contains(path, "Cursor") {
-		t.Errorf("Cursor path doesn't contain 'Cursor': %s", path)
+	if !contains(path, ".cursor") || !contains(path, "mcp.json") {
+		t.Errorf("Cursor path doesn't contain '.cursor/mcp.json': %s", path)
 	}
 }
 
@@ -75,10 +75,10 @@ func TestGetVSCodeConfigPaths(t *testing.T) {
 		t.Fatal("getVSCodeConfigPaths returned no paths")
 	}
 
-	// Verify path contains expected components
+	// Verify path contains Code and mcp.json
 	path := paths[0]
-	if !contains(path, "Code") {
-		t.Errorf("VS Code path doesn't contain 'Code': %s", path)
+	if !contains(path, "Code") || !contains(path, "mcp.json") {
+		t.Errorf("VS Code path doesn't contain 'Code' and 'mcp.json': %s", path)
 	}
 }
 
@@ -138,6 +138,9 @@ func TestClientTypes(t *testing.T) {
 	if ClientTypeVSCode != "vscode" {
 		t.Errorf("ClientTypeVSCode = %s, want 'vscode'", ClientTypeVSCode)
 	}
+	if ClientTypeCustom != "custom" {
+		t.Errorf("ClientTypeCustom = %s, want 'custom'", ClientTypeCustom)
+	}
 }
 
 func TestMCPClientStruct(t *testing.T) {
@@ -156,6 +159,46 @@ func TestMCPClientStruct(t *testing.T) {
 	if client.Type != ClientTypeClaude {
 		t.Errorf("Type = %s, want %s", client.Type, ClientTypeClaude)
 	}
+}
+
+func TestDetectOrUseCustom(t *testing.T) {
+	d := NewDetector()
+	tmpDir := t.TempDir()
+	customConfig := filepath.Join(tmpDir, "custom-mcp.json")
+
+	// Test with non-existent custom path
+	_, err := d.DetectOrUseCustom(customConfig)
+	if err != os.ErrNotExist {
+		t.Errorf("Expected ErrNotExist for non-existent path, got: %v", err)
+	}
+
+	// Create custom config
+	if err := os.WriteFile(customConfig, []byte("{}"), 0644); err != nil {
+		t.Fatalf("Failed to create custom config: %v", err)
+	}
+
+	// Test with existing custom path
+	clients, err := d.DetectOrUseCustom(customConfig)
+	if err != nil {
+		t.Fatalf("DetectOrUseCustom failed: %v", err)
+	}
+	if len(clients) != 1 {
+		t.Errorf("Expected 1 client, got %d", len(clients))
+	}
+	if clients[0].Type != ClientTypeCustom {
+		t.Errorf("Expected ClientTypeCustom, got %s", clients[0].Type)
+	}
+	if clients[0].ConfigPath != customConfig {
+		t.Errorf("Expected path %s, got %s", customConfig, clients[0].ConfigPath)
+	}
+
+	// Test with empty path (should auto-detect)
+	clients, err = d.DetectOrUseCustom("")
+	if err != nil {
+		t.Fatalf("DetectOrUseCustom with empty path failed: %v", err)
+	}
+	// Should return detected clients (may be empty)
+	_ = clients
 }
 
 // Helper function
