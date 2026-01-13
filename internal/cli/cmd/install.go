@@ -21,6 +21,7 @@ import (
 var (
 	targetClient string
 	configPath   string
+	hosted       bool
 )
 
 var installCmd = &cobra.Command{
@@ -77,14 +78,7 @@ var installCmd = &cobra.Command{
 			return fmt.Errorf("parsing manifest: %w", err)
 		}
 
-		// Check runtime requirements
-		fmt.Println("Checking runtime requirements...")
-		clilogger.Verbose("Runtime type: %s", manifest.Runtime.Type)
-		if err := checkRuntimeRequirements(manifest.Runtime); err != nil {
-			return fmt.Errorf("runtime check failed: %w", err)
-		}
-
-		// Detect installed MCP clients
+		// Detect installed MCP clients (needed for both local and hosted)
 		fmt.Println("Detecting MCP clients...")
 		clilogger.Verbose("Scanning for MCP client configurations...")
 		det := detector.NewDetector()
@@ -111,6 +105,19 @@ var installCmd = &cobra.Command{
 		fmt.Printf("Found %d MCP client(s):\n", len(clients))
 		for _, c := range clients {
 			fmt.Printf("  - %s (%s)\n", c.Name, c.ConfigPath)
+		}
+
+		// Check if hosted installation is requested or required
+		if hosted {
+			fmt.Println("\nInstalling as hosted server...")
+			return installHosted(mgr, serverResp.Server, serverResp.Version, manifest, clients)
+		}
+
+		// Check runtime requirements for local installation
+		fmt.Println("\nChecking runtime requirements...")
+		clilogger.Verbose("Runtime type: %s", manifest.Runtime.Type)
+		if err := checkRuntimeRequirements(manifest.Runtime); err != nil {
+			return fmt.Errorf("runtime check failed: %w", err)
 		}
 
 		// Patch client configs
@@ -217,8 +224,82 @@ func filterClientsByType(clients []detector.MCPClient, clientType string) []dete
 	return filtered
 }
 
+// installHosted installs a server as a hosted (proxied) server
+func installHosted(mgr *config.Manager, server entity.Server, version entity.ServerVersion, manifest mcpspec.MCPManifest, clients []detector.MCPClient) error {
+	// Get API key
+	apiKey, err := mgr.Get("auth.token")
+	if err != nil || apiKey == "" {
+		return fmt.Errorf("authentication required for hosted servers. Run 'omdr auth login'")
+	}
+
+	// Get path to omdr binary
+	omdrPath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("finding omdr binary: %w", err)
+	}
+
+	clilogger.Verbose("Using omdr binary at: %s", omdrPath)
+
+	// Create hosted server config
+	serverKey := fmt.Sprintf("%s/%s", server.Namespace, server.Name)
+	hostedConfig := installer.HostedServerConfig{
+		Command: omdrPath,
+		Args:    []string{"proxy", serverKey},
+		Env: map[string]string{
+			"OMDR_API_KEY": apiKey,
+		},
+	}
+
+	// Patch client configs
+	patcher := installer.NewConfigPatcher()
+	successCount := 0
+	var lastErr error
+
+	for _, c := range clients {
+		fmt.Printf("\nConfiguring %s...\n", c.Name)
+		if err := patcher.PatchHostedConfig(c, server, hostedConfig); err != nil {
+			fmt.Fprintf(os.Stderr, "  Failed to configure %s: %v\n", c.Name, err)
+			lastErr = err
+			continue
+		}
+		fmt.Printf("  ✓ Successfully configured %s\n", c.Name)
+		successCount++
+	}
+
+	// Display results
+	fmt.Println()
+	if successCount == 0 {
+		return fmt.Errorf("failed to configure any clients: %w", lastErr)
+	}
+
+	if successCount < len(clients) {
+		fmt.Printf("⚠ Partially installed: %d/%d clients configured\n", successCount, len(clients))
+	} else {
+		fmt.Println("✓ Installation successful!")
+	}
+
+	fmt.Printf("\nInstalled (hosted): %s/%s@%s\n", server.Namespace, server.Name, version.Version)
+	fmt.Printf("Description: %s\n", server.Description)
+	fmt.Println("\n⚠ Note: This is a hosted server. Usage will be billed according to your subscription.")
+
+	if len(manifest.Tools) > 0 {
+		fmt.Printf("Tools: %d\n", len(manifest.Tools))
+	}
+	if len(manifest.Resources) > 0 {
+		fmt.Printf("Resources: %d\n", len(manifest.Resources))
+	}
+	if len(manifest.Prompts) > 0 {
+		fmt.Printf("Prompts: %d\n", len(manifest.Prompts))
+	}
+
+	fmt.Println("\nRestart your MCP client(s) to use the new server.")
+
+	return nil
+}
+
 func init() {
 	rootCmd.AddCommand(installCmd)
 	installCmd.Flags().StringVar(&targetClient, "client", "", "Target specific client (claude, cursor, vscode)")
 	installCmd.Flags().StringVar(&configPath, "config-path", "", "Custom MCP config file path (e.g., ~/.config/Code/User/mcp.json)")
+	installCmd.Flags().BoolVar(&hosted, "hosted", false, "Install as a hosted server (runs on OMDR infrastructure)")
 }

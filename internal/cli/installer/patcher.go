@@ -106,3 +106,78 @@ func buildServerConfig(manifest mcpspec.MCPManifest) map[string]interface{} {
 
 	return config
 }
+
+// HostedServerConfig represents configuration for a hosted server
+type HostedServerConfig struct {
+	Command string
+	Args    []string
+	Env     map[string]string
+}
+
+// PatchHostedConfig adds a hosted MCP server to a client's configuration
+func (p *ConfigPatcher) PatchHostedConfig(client detector.MCPClient, server entity.Server, hostedConfig HostedServerConfig) error {
+	// Ensure config directory exists
+	configDir := filepath.Dir(client.ConfigPath)
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return fmt.Errorf("creating config directory: %w", err)
+	}
+
+	// Read existing config
+	data, err := os.ReadFile(client.ConfigPath)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("reading config: %w", err)
+	}
+
+	// Parse config
+	var config map[string]interface{}
+	if len(data) > 0 {
+		if err := json.Unmarshal(data, &config); err != nil {
+			return fmt.Errorf("parsing config: %w", err)
+		}
+	} else {
+		config = make(map[string]interface{})
+	}
+
+	// Create backup
+	if len(data) > 0 {
+		backupPath := fmt.Sprintf("%s.backup.%d", client.ConfigPath, time.Now().Unix())
+		if err := os.WriteFile(backupPath, data, 0644); err != nil {
+			return fmt.Errorf("creating backup: %w", err)
+		}
+	}
+
+	// Get or create mcpServers section
+	mcpServers, ok := config["mcpServers"].(map[string]interface{})
+	if !ok {
+		mcpServers = make(map[string]interface{})
+	}
+
+	// Build server key
+	serverKey := fmt.Sprintf("%s-%s", server.Namespace, server.Name)
+
+	// Build hosted server config
+	serverConfig := map[string]interface{}{
+		"command": hostedConfig.Command,
+		"args":    hostedConfig.Args,
+	}
+
+	if len(hostedConfig.Env) > 0 {
+		serverConfig["env"] = hostedConfig.Env
+	}
+
+	// Add server entry
+	mcpServers[serverKey] = serverConfig
+	config["mcpServers"] = mcpServers
+
+	// Write updated config
+	output, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshaling config: %w", err)
+	}
+
+	if err := os.WriteFile(client.ConfigPath, output, 0644); err != nil {
+		return fmt.Errorf("writing config: %w", err)
+	}
+
+	return nil
+}
