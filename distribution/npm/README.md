@@ -1,6 +1,8 @@
 # @omdr/cli
 
-Official npm wrapper for the OMDR CLI - the package manager for MCP (Model Context Protocol) servers.
+Official command-line interface for the [Open MCP Directory](https://openmcpdirectory.com) - discover, install, and manage MCP servers.
+
+Visit [openmcpdirectory.com](https://openmcpdirectory.com) to explore the directory.
 
 ## Installation
 
@@ -26,7 +28,7 @@ omdr doctor
 
 ## Documentation
 
-Full documentation available at [github.com/openmcpdirectory/omdr-cli](https://github.com/openmcpdirectory/omdr-cli)
+Full documentation available at [omdr.dev](https://docs.omdr.dev)
 
 ## License
 
