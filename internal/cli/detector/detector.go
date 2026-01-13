@@ -13,6 +13,7 @@ const (
 	ClientTypeClaude ClientType = "claude"
 	ClientTypeCursor ClientType = "cursor"
 	ClientTypeVSCode ClientType = "vscode"
+	ClientTypeCustom ClientType = "custom"
 )
 
 // MCPClient represents a detected MCP client installation
@@ -50,6 +51,26 @@ func (d *Detector) DetectClients() ([]MCPClient, error) {
 	}
 
 	return clients, nil
+}
+
+// DetectOrUseCustom detects clients or uses a custom config path
+func (d *Detector) DetectOrUseCustom(customPath string) ([]MCPClient, error) {
+	// If custom path provided, use it
+	if customPath != "" {
+		if !fileExists(customPath) {
+			return nil, os.ErrNotExist
+		}
+		return []MCPClient{
+			{
+				Name:       "Custom",
+				ConfigPath: customPath,
+				Type:       ClientTypeCustom,
+			},
+		}, nil
+	}
+
+	// Otherwise detect automatically
+	return d.DetectClients()
 }
 
 // detectClaude checks for Claude Desktop installation
@@ -133,25 +154,9 @@ func (d *Detector) getCursorConfigPaths() []string {
 		return nil
 	}
 
-	switch runtime.GOOS {
-	case "darwin":
-		return []string{
-			filepath.Join(home, "Library", "Application Support", "Cursor", "User", "globalStorage", "rooveterinaryinc.roo-cline", "settings", "cline_mcp_settings.json"),
-		}
-	case "windows":
-		appData := os.Getenv("APPDATA")
-		if appData == "" {
-			appData = filepath.Join(home, "AppData", "Roaming")
-		}
-		return []string{
-			filepath.Join(appData, "Cursor", "User", "globalStorage", "rooveterinaryinc.roo-cline", "settings", "cline_mcp_settings.json"),
-		}
-	case "linux":
-		return []string{
-			filepath.Join(home, ".config", "Cursor", "User", "globalStorage", "rooveterinaryinc.roo-cline", "settings", "cline_mcp_settings.json"),
-		}
-	default:
-		return nil
+	// Cursor uses a simple ~/.cursor/mcp.json for global config
+	return []string{
+		filepath.Join(home, ".cursor", "mcp.json"),
 	}
 }
 
@@ -165,7 +170,7 @@ func (d *Detector) getVSCodeConfigPaths() []string {
 	switch runtime.GOOS {
 	case "darwin":
 		return []string{
-			filepath.Join(home, "Library", "Application Support", "Code", "User", "globalStorage", "rooveterinaryinc.roo-cline", "settings", "cline_mcp_settings.json"),
+			filepath.Join(home, "Library", "Application Support", "Code", "User", "mcp.json"),
 		}
 	case "windows":
 		appData := os.Getenv("APPDATA")
@@ -173,11 +178,11 @@ func (d *Detector) getVSCodeConfigPaths() []string {
 			appData = filepath.Join(home, "AppData", "Roaming")
 		}
 		return []string{
-			filepath.Join(appData, "Code", "User", "globalStorage", "rooveterinaryinc.roo-cline", "settings", "cline_mcp_settings.json"),
+			filepath.Join(appData, "Code", "User", "mcp.json"),
 		}
 	case "linux":
 		return []string{
-			filepath.Join(home, ".config", "Code", "User", "globalStorage", "rooveterinaryinc.roo-cline", "settings", "cline_mcp_settings.json"),
+			filepath.Join(home, ".config", "Code", "User", "mcp.json"),
 		}
 	default:
 		return nil

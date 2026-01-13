@@ -20,6 +20,7 @@ import (
 
 var (
 	targetClient string
+	configPath   string
 )
 
 var installCmd = &cobra.Command{
@@ -87,13 +88,16 @@ var installCmd = &cobra.Command{
 		fmt.Println("Detecting MCP clients...")
 		clilogger.Verbose("Scanning for MCP client configurations...")
 		det := detector.NewDetector()
-		clients, err := det.DetectClients()
+		clients, err := det.DetectOrUseCustom(configPath)
 		if err != nil {
+			if err == os.ErrNotExist {
+				return fmt.Errorf("config file not found: %s", configPath)
+			}
 			return fmt.Errorf("detecting clients: %w", err)
 		}
 
 		if len(clients) == 0 {
-			return fmt.Errorf("no MCP clients detected. Please install Claude Desktop, Cursor, or VS Code with MCP extension")
+			return fmt.Errorf("no MCP clients detected. Use --config-path to specify a custom config file, or install Claude Desktop, Cursor, or VS Code with MCP extension")
 		}
 
 		// Filter by target client if specified
@@ -216,4 +220,5 @@ func filterClientsByType(clients []detector.MCPClient, clientType string) []dete
 func init() {
 	rootCmd.AddCommand(installCmd)
 	installCmd.Flags().StringVar(&targetClient, "client", "", "Target specific client (claude, cursor, vscode)")
+	installCmd.Flags().StringVar(&configPath, "config-path", "", "Custom MCP config file path (e.g., ~/.config/Code/User/mcp.json)")
 }

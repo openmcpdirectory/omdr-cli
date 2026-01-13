@@ -51,8 +51,14 @@ omdr auth login
 # Search for MCP servers
 omdr search "stripe payments"
 
-# Install a server
+# Install a server (auto-detects Claude, Cursor, VS Code)
 omdr install @stripe/payments
+
+# Install to specific client
+omdr install @stripe/payments --client vscode
+
+# Install using custom config path
+omdr install @stripe/payments --config-path ~/.config/Code/User/mcp.json
 
 # List installed servers
 omdr list
@@ -60,6 +66,16 @@ omdr list
 # Check your environment
 omdr doctor
 ```
+
+## Supported Clients
+
+OMDR automatically detects and configures:
+
+- **Claude Desktop** - `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Cursor** - `~/.cursor/mcp.json`
+- **VS Code** - `~/.config/Code/User/mcp.json`
+
+Or use `--config-path` to specify any custom MCP config file.
 
 ## Configuration
 
