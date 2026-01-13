@@ -183,3 +183,43 @@ func (c *Client) IsRateLimited(err error) (bool, time.Duration) {
 
 	return true, time.Duration(seconds) * time.Second
 }
+
+func (c *Client) PostMultipart(path string, contentType string, body io.Reader, result interface{}) error {
+	req, err := http.NewRequest(http.MethodPost, c.baseURL+path, body)
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", contentType)
+
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("executing request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("reading response: %w", err)
+	}
+
+	if resp.StatusCode >= 400 {
+		var apiErr APIError
+		if err := json.Unmarshal(respBody, &apiErr); err != nil {
+			return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
+		}
+		return &apiErr
+	}
+
+	if result != nil && len(respBody) > 0 {
+		if err := json.Unmarshal(respBody, result); err != nil {
+			return fmt.Errorf("unmarshaling response: %w", err)
+		}
+	}
+
+	return nil
+}

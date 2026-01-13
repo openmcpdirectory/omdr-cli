@@ -1,9 +1,14 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/openmcpdirectory/omdr-cli/internal/cli/client"
 	"github.com/openmcpdirectory/omdr-cli/internal/cli/config"
@@ -13,7 +18,14 @@ import (
 )
 
 var (
-	dryRun bool
+	dryRun          bool
+	deploymentModel string
+	artifactPath    string
+	githubRepo      string
+	selfHostedURL   string
+	pricingModel    string
+	pricePerCall    int64
+	monthlyPrice    int64
 )
 
 var publishCmd = &cobra.Command{
@@ -93,19 +105,55 @@ var publishCmd = &cobra.Command{
 		fmt.Println("Publishing to registry...")
 
 		publishReq := struct {
-			Namespace   string          `json:"namespace"`
-			Name        string          `json:"name"`
-			Description string          `json:"description"`
-			SourceURL   string          `json:"source_url"`
-			Version     string          `json:"version"`
-			Manifest    json.RawMessage `json:"manifest"`
+			Namespace       string          `json:"namespace"`
+			Name            string          `json:"name"`
+			Description     string          `json:"description"`
+			SourceURL       string          `json:"source_url"`
+			Version         string          `json:"version"`
+			Manifest        json.RawMessage `json:"manifest"`
+			DeploymentModel string          `json:"deployment_model,omitempty"`
+			ArtifactType    string          `json:"artifact_type,omitempty"`
+			ArtifactURL     string          `json:"artifact_url,omitempty"`
+			PricingModel    string          `json:"pricing_model,omitempty"`
+			PricePerCall    int64           `json:"price_per_call,omitempty"`
+			MonthlyPrice    int64           `json:"monthly_price,omitempty"`
 		}{
-			Namespace:   manifest.Name, // Use name as namespace for now
-			Name:        manifest.Name,
-			Description: manifest.Description,
-			SourceURL:   manifest.Repository,
-			Version:     manifest.Version,
-			Manifest:    manifestData,
+			Namespace:       manifest.Name,
+			Name:            manifest.Name,
+			Description:     manifest.Description,
+			SourceURL:       manifest.Repository,
+			Version:         manifest.Version,
+			Manifest:        manifestData,
+			DeploymentModel: deploymentModel,
+			PricingModel:    pricingModel,
+			PricePerCall:    pricePerCall,
+			MonthlyPrice:    monthlyPrice,
+		}
+
+		if githubRepo != "" {
+			publishReq.DeploymentModel = "hosted_omdr"
+			publishReq.ArtifactType = "docker"
+			publishReq.ArtifactURL = githubRepo
+			fmt.Printf("Publishing GitHub repo: %s\n", githubRepo)
+		} else if artifactPath != "" {
+			publishReq.DeploymentModel = "hosted_omdr"
+			fmt.Printf("Uploading artifact: %s\n", artifactPath)
+
+			artifactURL, artifactType, err := uploadArtifact(apiClient, artifactPath)
+			if err != nil {
+				return fmt.Errorf("uploading artifact: %w", err)
+			}
+
+			publishReq.ArtifactType = artifactType
+			publishReq.ArtifactURL = artifactURL
+			fmt.Printf("✓ Artifact uploaded: %s\n", artifactURL)
+		} else if selfHostedURL != "" {
+			publishReq.DeploymentModel = "self_hosted"
+			publishReq.ArtifactType = "endpoint"
+			publishReq.ArtifactURL = selfHostedURL
+			fmt.Printf("Publishing self-hosted endpoint: %s\n", selfHostedURL)
+		} else if deploymentModel == "" {
+			publishReq.DeploymentModel = "local"
 		}
 
 		var publishResp struct {
@@ -180,4 +228,61 @@ var publishCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(publishCmd)
 	publishCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate manifest without publishing")
+	publishCmd.Flags().StringVar(&deploymentModel, "deployment", "local", "Deployment model: local, hosted_omdr, self_hosted")
+	publishCmd.Flags().StringVar(&artifactPath, "artifact", "", "Path to artifact (Docker image, WASM, etc.) for hosted deployment")
+	publishCmd.Flags().StringVar(&githubRepo, "github", "", "GitHub repository URL for OMDR-hosted deployment")
+	publishCmd.Flags().StringVar(&selfHostedURL, "self-hosted", "", "Self-hosted endpoint URL")
+	publishCmd.Flags().StringVar(&pricingModel, "pricing", "free", "Pricing model: free, per_call, subscription")
+	publishCmd.Flags().Int64Var(&pricePerCall, "price-per-call", 0, "Price per call in cents")
+	publishCmd.Flags().Int64Var(&monthlyPrice, "monthly-price", 0, "Monthly subscription price in cents")
+}
+
+func uploadArtifact(apiClient *client.Client, artifactPath string) (string, string, error) {
+	file, err := os.Open(artifactPath)
+	if err != nil {
+		return "", "", fmt.Errorf("opening artifact file: %w", err)
+	}
+	defer file.Close()
+
+	ext := strings.ToLower(filepath.Ext(artifactPath))
+	var artifactType string
+	switch ext {
+	case ".wasm":
+		artifactType = "wasm"
+	case ".tar", ".tar.gz", ".tgz":
+		artifactType = "docker"
+	default:
+		return "", "", fmt.Errorf("unsupported artifact type: %s (supported: .wasm, .tar, .tar.gz)", ext)
+	}
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	part, err := writer.CreateFormFile("artifact", filepath.Base(artifactPath))
+	if err != nil {
+		return "", "", fmt.Errorf("creating form file: %w", err)
+	}
+
+	if _, err := io.Copy(part, file); err != nil {
+		return "", "", fmt.Errorf("copying file data: %w", err)
+	}
+
+	if err := writer.WriteField("artifact_type", artifactType); err != nil {
+		return "", "", fmt.Errorf("writing artifact type: %w", err)
+	}
+
+	if err := writer.Close(); err != nil {
+		return "", "", fmt.Errorf("closing multipart writer: %w", err)
+	}
+
+	var uploadResp struct {
+		ArtifactURL  string `json:"artifact_url"`
+		ArtifactType string `json:"artifact_type"`
+	}
+
+	if err := apiClient.PostMultipart("/api/v1/artifacts/upload", writer.FormDataContentType(), body, &uploadResp); err != nil {
+		return "", "", fmt.Errorf("uploading artifact: %w", err)
+	}
+
+	return uploadResp.ArtifactURL, uploadResp.ArtifactType, nil
 }

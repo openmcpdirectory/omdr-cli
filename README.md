@@ -1,5 +1,7 @@
 # OMDR CLI
 
+> ⚠️ **Under Active Development** - not ready for use yet. Core functionality is still being built.
+
 Official command-line interface for the [Open MCP Directory](https://openmcpdirectory.com) - discover, install, and manage MCP servers.
 
 Visit [openmcpdirectory.com](https://openmcpdirectory.com) to explore the directory.
@@ -174,10 +176,15 @@ omdr invoices list              # List invoices
 
 ### Publishing (Creators)
 ```bash
-omdr publish <manifest>         # Publish server to registry
-omdr pricing set <package>      # Set pricing model
-omdr payouts setup              # Complete Stripe Connect onboarding
-omdr earnings                   # View earnings and payouts
+omdr publish                                    # Publish local server (free)
+omdr publish --deployment hosted_omdr \
+  --artifact ./server.wasm \
+  --pricing per_call --price-per-call 10        # Publish hosted WASM ($0.10/call)
+omdr publish --github https://github.com/user/repo  # Publish from GitHub repo
+omdr publish --self-hosted https://api.example.com  # Publish self-hosted endpoint
+omdr pricing set <package>                      # Update pricing model
+omdr payouts setup                              # Complete Stripe Connect onboarding
+omdr earnings                                   # View earnings and payouts
 ```
 
 ### Utilities
@@ -338,6 +345,8 @@ make install
 
 ### Publishing Your MCP Server
 
+#### Option 1: Local Server (Free)
+
 1. Create `mcp.json` manifest:
 ```json
 {
@@ -357,32 +366,86 @@ make install
 
 2. Publish to registry:
 ```bash
-omdr publish ./mcp.json
+omdr publish
 ```
 
-3. Set pricing (optional):
+Users install locally (free):
 ```bash
-omdr pricing set @yourname/my-tool --per-call 0.01  # $0.01 per call
+omdr install @yourname/my-tool
 ```
 
-4. Complete Stripe Connect onboarding:
+#### Option 2: OMDR-Hosted Server (Paid) 🚧 Beta
+
+**Upload WASM artifact:**
 ```bash
-omdr payouts setup
+omdr publish --deployment hosted_omdr \
+  --artifact ./server.wasm \
+  --pricing per_call --price-per-call 10
 ```
 
-5. Users can now install:
+**Build from GitHub:**
+```bash
+omdr publish --deployment hosted_omdr \
+  --github https://github.com/yourname/mcp-server \
+  --pricing per_call --price-per-call 10
+```
+
+**Supported artifact types:**
+- `.wasm` - WebAssembly modules
+- `.tar`, `.tar.gz` - Docker images (coming soon)
+
+Users install hosted version:
 ```bash
 omdr install --hosted @yourname/my-tool
 ```
 
+#### Option 3: Self-Hosted Server (Paid)
+
+Host on your infrastructure, use OMDR for billing:
+
+```bash
+omdr publish --deployment self_hosted \
+  --self-hosted https://api.yourserver.com \
+  --pricing per_call --price-per-call 10
+```
+
+OMDR forwards requests to your endpoint after billing.
+
+### Deployment Model Comparison
+
+| Model | Hosting | Build | Pricing | Revenue Split |
+|-------|---------|-------|---------|---------------|
+| **Local** | User's machine | N/A | Free | N/A |
+| **OMDR-Hosted** | OMDR infrastructure | OMDR builds from GitHub or uploaded artifact | Per-call or subscription | Creator 90%, OMDR 10% |
+| **Self-Hosted** | Your infrastructure | You manage | Per-call or subscription | Creator 95%, OMDR 5% |
+| **Enterprise** | Enterprise infrastructure | Custom | Negotiated | Custom |
+
+### Tier Requirements
+
+- **Free tier**: Can only publish local servers
+- **Pro tier ($20/mo)**: Can publish local, OMDR-hosted, and self-hosted
+- **Enterprise**: All deployment models including private hosting
+
 ### Monetization Options
 
 - **Free**: No pricing, users install locally
-- **Per-call**: Charge per tool invocation (e.g., $0.01/call)
-- **Subscription**: Monthly fee for unlimited access
-- **Hybrid**: Base subscription + per-call overage
+- **Per-call**: Charge per tool invocation (e.g., $0.10/call)
+- **Subscription**: Monthly fee for unlimited access (coming soon)
+- **Hybrid**: Base subscription + per-call overage (coming soon)
 
-You earn **90%** of revenue, OMDR takes **10%** platform fee.
+### Complete Stripe Connect Onboarding
+
+To receive payouts:
+```bash
+omdr payouts setup
+```
+
+View earnings:
+```bash
+omdr earnings
+```
+
+Payouts are processed weekly with a $10 minimum threshold.
 
 ## Troubleshooting
 
