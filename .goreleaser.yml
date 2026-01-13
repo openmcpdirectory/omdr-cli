@@ -7,7 +7,7 @@ before:
 
 builds:
   - id: omdr-cli
-    main: ./cmd/omdr-cli
+    main: ./cmd/omdr
     binary: omdr
     env:
       - CGO_ENABLED=0
@@ -28,6 +28,9 @@ builds:
         goarch: arm64
     ldflags:
       - -s -w
+      - -X github.com/openmcpdirectory/omdr-cli/internal/version.Version={{.Version}}
+      - -X github.com/openmcpdirectory/omdr-cli/internal/version.Commit={{.Commit}}
+      - -X github.com/openmcpdirectory/omdr-cli/internal/version.Date={{.Date}}
       - -X github.com/openmcpdirectory/omdr-cli/internal/version.Version={{.Version}}
       - -X github.com/openmcpdirectory/omdr-cli/internal/version.Commit={{.Commit}}
       - -X github.com/openmcpdirectory/omdr-cli/internal/version.Date={{.Date}}
@@ -64,6 +67,17 @@ changelog:
       - '^chore:'
       - Merge pull request
       - Merge branch
+  groups:
+    - title: Features
+      regexp: '^feat:'
+    - title: Bug Fixes
+      regexp: '^fix:'
+    - title: Performance
+      regexp: '^perf:'
+    - title: Security
+      regexp: '^security:'
+    - title: Others
+      order: 999
 
 brews:
   - name: omdr
@@ -146,20 +160,36 @@ release:
   prerelease: auto
   mode: replace
   header: |
-    ## OMDR {{ .Tag }} Release
+    ## OMDR CLI {{ .Tag }}
     
-    Install via:
+    Released on {{ .Date }}
+    
+    ### Installation
+    
+    **Homebrew (macOS/Linux)**
     ```bash
-    # macOS/Linux (Homebrew)
     brew install omdr/tap/omdr
+    ```
     
-    # Windows (Scoop)
+    **Scoop (Windows)**
+    ```bash
     scoop bucket add omdr https://github.com/openmcpdirectory/scoop-bucket
     scoop install omdr
+    ```
     
-    # Go
-    go install github.com/openmcpdirectory/omdr-cli/cmd/omdr@{{ .Tag }}
-    
-    # npm
+    **npm**
+    ```bash
     npm install -g @omdr/cli
     ```
+    
+    **Go**
+    ```bash
+    go install github.com/openmcpdirectory/omdr-cli/cmd/omdr@{{ .Tag }}
+    ```
+  name_template: "Release {{ .Tag }}"
+  footer: |
+    **Full Changelog**: https://github.com/openmcpdirectory/omdr-cli/compare/{{ .PreviousTag }}...{{ .Tag }}
+    
+    ---
+    
+    Visit [openmcpdirectory.com](https://openmcpdirectory.com) to explore the directory.
