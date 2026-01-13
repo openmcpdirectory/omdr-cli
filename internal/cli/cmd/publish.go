@@ -22,6 +22,7 @@ var (
 	deploymentModel string
 	artifactPath    string
 	githubRepo      string
+	githubToken     string
 	selfHostedURL   string
 	pricingModel    string
 	pricePerCall    int64
@@ -112,6 +113,8 @@ var publishCmd = &cobra.Command{
 			Version         string          `json:"version"`
 			Manifest        json.RawMessage `json:"manifest"`
 			DeploymentModel string          `json:"deployment_model,omitempty"`
+			GitHubURL       string          `json:"github_url,omitempty"`
+			GitHubToken     string          `json:"github_token,omitempty"`
 			ArtifactType    string          `json:"artifact_type,omitempty"`
 			ArtifactURL     string          `json:"artifact_url,omitempty"`
 			PricingModel    string          `json:"pricing_model,omitempty"`
@@ -133,8 +136,12 @@ var publishCmd = &cobra.Command{
 		if githubRepo != "" {
 			publishReq.DeploymentModel = "hosted_omdr"
 			publishReq.ArtifactType = "docker"
-			publishReq.ArtifactURL = githubRepo
+			publishReq.GitHubURL = githubRepo
+			publishReq.GitHubToken = githubToken
 			fmt.Printf("Publishing GitHub repo: %s\n", githubRepo)
+			if githubToken != "" {
+				fmt.Println("✓ Using provided GitHub token for private repo access")
+			}
 		} else if artifactPath != "" {
 			publishReq.DeploymentModel = "hosted_omdr"
 			fmt.Printf("Uploading artifact: %s\n", artifactPath)
@@ -231,6 +238,7 @@ func init() {
 	publishCmd.Flags().StringVar(&deploymentModel, "deployment", "local", "Deployment model: local, hosted_omdr, self_hosted")
 	publishCmd.Flags().StringVar(&artifactPath, "artifact", "", "Path to artifact (Docker image, WASM, etc.) for hosted deployment")
 	publishCmd.Flags().StringVar(&githubRepo, "github", "", "GitHub repository URL for OMDR-hosted deployment")
+	publishCmd.Flags().StringVar(&githubToken, "github-token", "", "GitHub personal access token for private repos")
 	publishCmd.Flags().StringVar(&selfHostedURL, "self-hosted", "", "Self-hosted endpoint URL")
 	publishCmd.Flags().StringVar(&pricingModel, "pricing", "free", "Pricing model: free, per_call, subscription")
 	publishCmd.Flags().Int64Var(&pricePerCall, "price-per-call", 0, "Price per call in cents")

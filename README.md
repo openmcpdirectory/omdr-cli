@@ -180,7 +180,9 @@ omdr publish                                    # Publish local server (free)
 omdr publish --deployment hosted_omdr \
   --artifact ./server.wasm \
   --pricing per_call --price-per-call 10        # Publish hosted WASM ($0.10/call)
-omdr publish --github https://github.com/user/repo  # Publish from GitHub repo
+omdr publish --github https://github.com/user/repo  # Publish from GitHub repo (public)
+omdr publish --github https://github.com/user/private-repo \
+  --github-token ghp_xxxxx                      # Publish from private GitHub repo
 omdr publish --self-hosted https://api.example.com  # Publish self-hosted endpoint
 omdr pricing set <package>                      # Update pricing model
 omdr payouts setup                              # Complete Stripe Connect onboarding
@@ -383,10 +385,19 @@ omdr publish --deployment hosted_omdr \
   --pricing per_call --price-per-call 10
 ```
 
-**Build from GitHub:**
+**Build from GitHub (public repo):**
 ```bash
 omdr publish --deployment hosted_omdr \
   --github https://github.com/yourname/mcp-server \
+  --pricing per_call --price-per-call 10
+```
+
+**Build from GitHub (private repo):**
+```bash
+# Requires GitHub personal access token with 'repo' scope
+omdr publish --deployment hosted_omdr \
+  --github https://github.com/yourname/private-mcp-server \
+  --github-token ghp_xxxxxxxxxxxxx \
   --pricing per_call --price-per-call 10
 ```
 
