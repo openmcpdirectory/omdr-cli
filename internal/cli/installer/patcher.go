@@ -8,12 +8,15 @@ import (
 	"time"
 
 	"github.com/openmcpdirectory/omdr-cli/internal/cli/detector"
+	"github.com/openmcpdirectory/omdr-cli/internal/cli/registry"
 	"github.com/openmcpdirectory/omdr-cli/internal/entity"
 	mcpspec "github.com/openmcpdirectory/omdr-cli/pkg/mcp-spec"
 )
 
 // ConfigPatcher handles modification of MCP client configuration files
-type ConfigPatcher struct{}
+type ConfigPatcher struct {
+	RegistryHome string // Optional override for testing
+}
 
 // NewConfigPatcher creates a new config patcher
 func NewConfigPatcher() *ConfigPatcher {
@@ -68,11 +71,47 @@ func (p *ConfigPatcher) PatchConfig(client detector.MCPClient, serverVersion ent
 	// Build server key (namespace/name format)
 	serverKey := fmt.Sprintf("%s/%s", manifest.Name, serverVersion.Version)
 
-	// Build server config from manifest
-	serverConfig := buildServerConfig(manifest)
+	// Register server in local registry
+	var reg *registry.LocalRegistry
+	var regErr error
+
+	if p.RegistryHome != "" {
+		reg, regErr = registry.NewLocalRegistryWithHome(p.RegistryHome)
+	} else {
+		reg, regErr = registry.NewLocalRegistry()
+	}
+
+	if regErr != nil {
+		return fmt.Errorf("initializing registry: %w", regErr)
+	}
+
+	serverConfigData := registry.ServerConfig{
+		Command: manifest.Runtime.Command,
+		Args:    manifest.Runtime.Args,
+		Env:     manifest.Runtime.Env,
+	}
+
+	if err := reg.Register(serverKey, serverConfigData); err != nil {
+		return fmt.Errorf("registering server: %w", err)
+	}
+
+	// Build server config for the client (using omdr run)
+	// We need the absolute path to the omdr executable or assume it's in PATH.
+	// Users usually have omdr in PATH.
+	omdrCmd := "omdr"
+	executable, err := os.Executable()
+	if err == nil {
+		omdrCmd = executable
+	}
+
+	clientServerConfig := map[string]interface{}{
+		"command": omdrCmd,
+		"args":    []string{"run", serverKey},
+		// We don't verify env here, they are injected by omdr run
+	}
 
 	// Add/update server entry (preserves existing entries)
-	mcpServers[serverKey] = serverConfig
+	mcpServers[serverKey] = clientServerConfig
 	config["mcpServers"] = mcpServers
 
 	// Write updated config with proper formatting
@@ -86,25 +125,6 @@ func (p *ConfigPatcher) PatchConfig(client detector.MCPClient, serverVersion ent
 	}
 
 	return nil
-}
-
-// buildServerConfig creates the server configuration object from a manifest
-func buildServerConfig(manifest mcpspec.MCPManifest) map[string]interface{} {
-	config := map[string]interface{}{
-		"command": manifest.Runtime.Command,
-	}
-
-	// Add args if present
-	if len(manifest.Runtime.Args) > 0 {
-		config["args"] = manifest.Runtime.Args
-	}
-
-	// Add env if present
-	if len(manifest.Runtime.Env) > 0 {
-		config["env"] = manifest.Runtime.Env
-	}
-
-	return config
 }
 
 // HostedServerConfig represents configuration for a hosted server

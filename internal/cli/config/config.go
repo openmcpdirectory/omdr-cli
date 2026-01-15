@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/openmcpdirectory/omdr-cli/internal/cli/secret"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
 )
@@ -40,6 +41,18 @@ func (m *Manager) Get(key string) (string, error) {
 		return "", err
 	}
 
+	// Use keychain for auth token
+	if key == "auth.token" {
+		val, err := secret.Get("", "")
+		if err != nil {
+			return "", err
+		}
+		if val != "" {
+			return val, nil
+		}
+		// Fallback to config file if not in keychain (for migration/compat)
+	}
+
 	value := viper.GetString(key)
 	if value == "" {
 		return "", fmt.Errorf("key not found: %s", key)
@@ -49,6 +62,14 @@ func (m *Manager) Get(key string) (string, error) {
 }
 
 func (m *Manager) Set(key, value string) error {
+	// Use keychain for auth token
+	if key == "auth.token" {
+		if value == "" {
+			return secret.Delete("", "")
+		}
+		return secret.Store("", "", value)
+	}
+
 	configPath := m.globalPath
 
 	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {

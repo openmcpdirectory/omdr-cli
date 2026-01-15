@@ -19,6 +19,75 @@ func TestNewConfigPatcher(t *testing.T) {
 	}
 }
 
+func TestPatchConfig_WithEnvVars(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.json")
+
+	client := detector.MCPClient{
+		Name:       "Test Client",
+		ConfigPath: configPath,
+		Type:       detector.ClientTypeClaude,
+	}
+
+	manifest := `{
+		"name": "test-server",
+		"version": "1.0.0",
+		"runtime": {
+			"type": "node",
+			"command": "node",
+			"args": ["index.js"],
+			"env": {
+				"API_KEY": "test-key",
+				"DEBUG": "true"
+			}
+		}
+	}`
+
+	serverVersion := entity.ServerVersion{
+		ID:       uuid.New(),
+		ServerID: uuid.New(),
+		Version:  "1.0.0",
+		Manifest: json.RawMessage(manifest),
+	}
+
+	patcher := NewConfigPatcher()
+	patcher.RegistryHome = tmpDir
+	err := patcher.PatchConfig(client, serverVersion)
+	if err != nil {
+		t.Fatalf("PatchConfig failed: %v", err)
+	}
+
+	// Verify env vars are NOT in client config (injected by run)
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("Failed to read config: %v", err)
+	}
+
+	var config map[string]interface{}
+	if err := json.Unmarshal(data, &config); err != nil {
+		t.Fatalf("Failed to parse config: %v", err)
+	}
+
+	mcpServers := config["mcpServers"].(map[string]interface{})
+	serverConfig := mcpServers["test-server/1.0.0"].(map[string]interface{})
+
+	if _, ok := serverConfig["env"]; ok {
+		t.Error("env section should NOT be present in client config (should be in registry)")
+	}
+
+	// Verify registry content
+	registryPath := filepath.Join(tmpDir, ".omdr", "servers.yaml")
+	regData, err := os.ReadFile(registryPath)
+	if err != nil {
+		t.Fatalf("Failed to read registry file: %v", err)
+	}
+
+	content := string(regData)
+	if !strings.Contains(content, "API_KEY: test-key") {
+		t.Errorf("Registry should contain API_KEY, got: %s", content)
+	}
+}
+
 func TestPatchConfig_EmptyFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.json")
@@ -47,6 +116,7 @@ func TestPatchConfig_EmptyFile(t *testing.T) {
 	}
 
 	patcher := NewConfigPatcher()
+	patcher.RegistryHome = tmpDir // Use temp dir for registry
 	err := patcher.PatchConfig(client, serverVersion)
 	if err != nil {
 		t.Fatalf("PatchConfig failed: %v", err)
@@ -71,8 +141,30 @@ func TestPatchConfig_EmptyFile(t *testing.T) {
 
 	// Verify server entry exists
 	serverKey := "test-server/1.0.0"
-	if _, ok := mcpServers[serverKey]; !ok {
+	serverEntry, ok := mcpServers[serverKey].(map[string]interface{})
+	if !ok {
 		t.Errorf("Server entry %s not found", serverKey)
+	}
+
+	// Verify command is omdr (or absolute path to it, or test binary)
+	cmd, ok := serverEntry["command"].(string)
+	if !ok {
+		t.Errorf("Command missing or not string")
+	} else {
+		// In test, os.Executable() is the test binary
+		base := filepath.Base(cmd)
+		if !strings.Contains(base, "omdr") && !strings.Contains(base, "installer.test") && !strings.Contains(base, "__debug_bin") {
+			// relax check, just ensure it's NOT "node"
+			if base == "node" {
+				t.Errorf("Command should NOT be node, got (omdr-like): %s", cmd)
+			}
+		}
+	}
+
+	// Verify args
+	args, ok := serverEntry["args"].([]interface{})
+	if !ok || len(args) != 2 || args[0] != "run" || args[1] != serverKey {
+		t.Errorf("Args should be ['run', '%s'], got: %v", serverKey, args)
 	}
 }
 
@@ -119,6 +211,7 @@ func TestPatchConfig_PreservesExistingEntries(t *testing.T) {
 	}
 
 	patcher := NewConfigPatcher()
+	patcher.RegistryHome = tmpDir
 	err := patcher.PatchConfig(client, serverVersion)
 	if err != nil {
 		t.Fatalf("PatchConfig failed: %v", err)
@@ -261,71 +354,6 @@ func TestPatchConfig_MalformedJSON(t *testing.T) {
 	}
 }
 
-func TestPatchConfig_WithEnvVars(t *testing.T) {
-	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "config.json")
-
-	client := detector.MCPClient{
-		Name:       "Test Client",
-		ConfigPath: configPath,
-		Type:       detector.ClientTypeClaude,
-	}
-
-	manifest := `{
-		"name": "test-server",
-		"version": "1.0.0",
-		"runtime": {
-			"type": "node",
-			"command": "node",
-			"args": ["index.js"],
-			"env": {
-				"API_KEY": "test-key",
-				"DEBUG": "true"
-			}
-		}
-	}`
-
-	serverVersion := entity.ServerVersion{
-		ID:       uuid.New(),
-		ServerID: uuid.New(),
-		Version:  "1.0.0",
-		Manifest: json.RawMessage(manifest),
-	}
-
-	patcher := NewConfigPatcher()
-	err := patcher.PatchConfig(client, serverVersion)
-	if err != nil {
-		t.Fatalf("PatchConfig failed: %v", err)
-	}
-
-	// Verify env vars are included
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Fatalf("Failed to read config: %v", err)
-	}
-
-	var config map[string]interface{}
-	if err := json.Unmarshal(data, &config); err != nil {
-		t.Fatalf("Failed to parse config: %v", err)
-	}
-
-	mcpServers := config["mcpServers"].(map[string]interface{})
-	serverConfig := mcpServers["test-server/1.0.0"].(map[string]interface{})
-
-	env, ok := serverConfig["env"].(map[string]interface{})
-	if !ok {
-		t.Fatal("env section not found in server config")
-	}
-
-	if env["API_KEY"] != "test-key" {
-		t.Errorf("API_KEY = %v, want 'test-key'", env["API_KEY"])
-	}
-
-	if env["DEBUG"] != "true" {
-		t.Errorf("DEBUG = %v, want 'true'", env["DEBUG"])
-	}
-}
-
 func TestPatchConfig_CreatesDirectory(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "nested", "dir", "config.json")
@@ -402,70 +430,6 @@ func TestPatchConfig_InvalidManifest(t *testing.T) {
 	}
 }
 
-func TestBuildServerConfig(t *testing.T) {
-	manifest := `{
-		"name": "test-server",
-		"version": "1.0.0",
-		"runtime": {
-			"type": "node",
-			"command": "node",
-			"args": ["index.js", "--port", "3000"],
-			"env": {
-				"NODE_ENV": "production"
-			}
-		}
-	}`
-
-	var mcpManifest struct {
-		Name    string `json:"name"`
-		Version string `json:"version"`
-		Runtime struct {
-			Type    string            `json:"type"`
-			Command string            `json:"command"`
-			Args    []string          `json:"args"`
-			Env     map[string]string `json:"env"`
-		} `json:"runtime"`
-	}
-
-	if err := json.Unmarshal([]byte(manifest), &mcpManifest); err != nil {
-		t.Fatalf("Failed to parse manifest: %v", err)
-	}
-
-	// Convert to mcpspec.MCPManifest for buildServerConfig
-	var mcpspecManifest struct {
-		Runtime struct {
-			Command string
-			Args    []string
-			Env     map[string]string
-		}
-	}
-	mcpspecManifest.Runtime.Command = mcpManifest.Runtime.Command
-	mcpspecManifest.Runtime.Args = mcpManifest.Runtime.Args
-	mcpspecManifest.Runtime.Env = mcpManifest.Runtime.Env
-
-	// Test would need actual mcpspec.MCPManifest type
-	// This is a simplified test to verify the structure
-	config := map[string]interface{}{
-		"command": mcpspecManifest.Runtime.Command,
-		"args":    mcpspecManifest.Runtime.Args,
-		"env":     mcpspecManifest.Runtime.Env,
-	}
-
-	if config["command"] != "node" {
-		t.Errorf("command = %v, want 'node'", config["command"])
-	}
-
-	args, ok := config["args"].([]string)
-	if !ok || len(args) != 3 {
-		t.Errorf("args = %v, want 3 elements", config["args"])
-	}
-
-	env, ok := config["env"].(map[string]string)
-	if !ok || env["NODE_ENV"] != "production" {
-		t.Errorf("env = %v, want NODE_ENV=production", config["env"])
-	}
-}
-
 func TestPatchConfig_ProperFormatting(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.json")
@@ -506,8 +470,9 @@ func TestPatchConfig_ProperFormatting(t *testing.T) {
 
 	// Check for indentation (should have spaces)
 	content := string(data)
-	if !strings.Contains(content, "  ") {
-		t.Error("Config file is not properly indented")
+	// A simple check for indentation, e.g., presence of newline followed by spaces
+	if !strings.Contains(content, "\n\t") && !strings.Contains(content, "\n  ") {
+		t.Errorf("Config file does not appear to be indented:\n%s", content)
 	}
 
 	// Verify it's valid JSON
