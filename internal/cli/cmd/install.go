@@ -123,6 +123,23 @@ var installCmd = &cobra.Command{
 		// Check runtime requirements for local installation
 		fmt.Println("\nChecking runtime requirements...")
 		clilogger.Verbose("Runtime type: %s", manifest.Runtime.Type)
+
+		// Check engine version constraints
+		if manifest.Engines != nil {
+			clilogger.Verbose("Checking engine requirements...")
+
+			reqs := map[string]string{
+				"node":   manifest.Engines.Node,
+				"python": manifest.Engines.Python,
+				"docker": manifest.Engines.Docker,
+			}
+
+			if err := runtime.CheckEngineRequirements(reqs); err != nil {
+				return fmt.Errorf("engine requirement check failed: %w", err)
+			}
+			fmt.Println("  ✓ Engine requirements met")
+		}
+
 		if err := checkRuntimeRequirements(manifest.Runtime); err != nil {
 			return fmt.Errorf("runtime check failed: %w", err)
 		}

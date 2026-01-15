@@ -58,5 +58,5 @@ type PromptArg struct {
 type EngineRequirements struct {
 	Node   string `json:"node,omitempty"`   // e.g., ">=18.0.0"
 	Python string `json:"python,omitempty"` // e.g., ">=3.9"
-	Docker string `json:"docker,omitempty"` // e.g., ">=20.10"
+	Docker string `json:"docker,omitempty"` // e.g., ">=24.0"
 }
