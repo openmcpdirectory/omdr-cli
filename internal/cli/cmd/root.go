@@ -6,7 +6,6 @@ import (
 
 	"github.com/openmcpdirectory/omdr-cli/internal/cli/branding"
 	clilogger "github.com/openmcpdirectory/omdr-cli/internal/cli/logger"
-	"github.com/openmcpdirectory/omdr-cli/internal/version"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -29,17 +28,6 @@ var rootCmd = &cobra.Command{
 	},
 }
 
-var versionCmd = &cobra.Command{
-	Use:   "version",
-	Short: "Show version information",
-	Run: func(cmd *cobra.Command, args []string) {
-		if !noBanner {
-			branding.ShowBanner()
-		}
-		fmt.Println(version.GetFullVersion())
-	},
-}
-
 func Execute() error {
 	return rootCmd.Execute()
 }
@@ -49,8 +37,6 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.omdr/config.yaml)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
 	rootCmd.PersistentFlags().BoolVar(&noBanner, "no-banner", false, "disable banner display")
-
-	rootCmd.AddCommand(versionCmd)
 }
 
 func initConfig() {

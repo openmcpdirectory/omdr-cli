@@ -28,7 +28,10 @@ var installCmd = &cobra.Command{
 	Use:   "install <package>",
 	Short: "Install an MCP server",
 	Long:  "Install an MCP server from the registry and configure it in your MCP clients",
-	Args:  cobra.ExactArgs(1),
+	Example: `  omdr install @namespace/server
+  omdr install @namespace/server --hosted
+  omdr install @namespace/server --auth-mode auth_only`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		packageName := args[0]
 

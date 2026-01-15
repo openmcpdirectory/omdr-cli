@@ -12,6 +12,12 @@ import (
 var secretsCmd = &cobra.Command{
 	Use:   "secrets",
 	Short: "Manage secure secrets for installed MCP servers",
+	Long: `Manage secure secrets (API keys, tokens) for installed MCP servers.
+Secrets are stored in your operating system's native keychain (Windows Credential Manager, macOS Keychain, etc.)
+and are injected as environment variables when the server is run via 'omdr run'.`,
+	Example: `  omdr secrets set @namespace/server API_KEY my-secret-value
+  omdr secrets list @namespace/server
+  omdr secrets delete @namespace/server API_KEY`,
 }
 
 // setCmd: omdr secrets set <server> <key> <value>

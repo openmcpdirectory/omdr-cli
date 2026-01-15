@@ -13,10 +13,11 @@ import (
 )
 
 var runCmd = &cobra.Command{
-	Use:   "run <server-name>",
-	Short: "Run an installed MCP server with secure secret injection",
-	Long:  "Execute an MCP server, injecting secrets from the secure keychain as environment variables. This is typically called by your MCP client (VS Code, Claude, etc).",
-	Args:  cobra.ExactArgs(1),
+	Use:     "run <server-name>",
+	Short:   "Run an installed MCP server with secure secret injection",
+	Long:    "Execute an MCP server, injecting secrets from the secure keychain as environment variables. This is typically called by your MCP client (VS Code, Claude, etc).",
+	Example: `  omdr run @namespace/server`,
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		serverName := args[0]
 
