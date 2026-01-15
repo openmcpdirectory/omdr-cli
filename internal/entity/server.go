@@ -22,8 +22,30 @@ type Server struct {
 	SponsorTier     *string   `json:"sponsor_tier,omitempty" db:"sponsor_tier"`
 	SponsorPriority int       `json:"sponsor_priority" db:"sponsor_priority"`
 	AuthMethod      *string   `json:"auth_method,omitempty" db:"auth_method"`
+	IsFork          bool      `json:"is_fork" db:"is_fork"`
+	ParentRepoURL   *string   `json:"parent_repo_url,omitempty" db:"parent_repo_url"`
 	CreatedAt       time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at" db:"updated_at"`
+}
+
+// PaidService represents a detected paid third-party service
+type PaidService struct {
+	ID            uuid.UUID `json:"id"`
+	ServerID      uuid.UUID `json:"server_id"`
+	ServiceName   string    `json:"service_name"`
+	ServiceType   string    `json:"service_type"`
+	Location      string    `json:"location"`
+	EstimatedCost *string   `json:"estimated_cost,omitempty"`
+	DetectedAt    time.Time `json:"detected_at"`
+}
+
+// ForkInfo represents fork relationship information
+type ForkInfo struct {
+	IsFork           bool     `json:"is_fork"`
+	ParentRepoURL    string   `json:"parent_repo_url,omitempty"`
+	ParentNamespace  string   `json:"parent_namespace,omitempty"`
+	ParentName       string   `json:"parent_name,omitempty"`
+	ParentTrustScore *float64 `json:"parent_trust_score,omitempty"`
 }
 
 // ServerVersion represents a specific version of an MCP server

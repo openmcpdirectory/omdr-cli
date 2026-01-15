@@ -64,8 +64,10 @@ var installCmd = &cobra.Command{
 		clilogger.Verbose("Request path: /api/v1/servers/%s/%s", namespace, name)
 
 		var serverResp struct {
-			Server  entity.Server        `json:"server"`
-			Version entity.ServerVersion `json:"version"`
+			Server       entity.Server        `json:"server"`
+			Version      entity.ServerVersion `json:"version"`
+			PaidServices []entity.PaidService `json:"paid_services,omitempty"`
+			ForkInfo     *entity.ForkInfo     `json:"fork_info,omitempty"`
 		}
 
 		path := fmt.Sprintf("/api/v1/servers/%s/%s", namespace, name)
@@ -74,6 +76,43 @@ var installCmd = &cobra.Command{
 		}
 
 		clilogger.Verbose("Server fetched: %s/%s version %s", serverResp.Server.Namespace, serverResp.Server.Name, serverResp.Version.Version)
+
+		// Display paid service warnings if detected
+		if len(serverResp.PaidServices) > 0 {
+			fmt.Println("\n⚠ WARNING: This server uses paid third-party services")
+			fmt.Println("The following paid services were detected:")
+			for _, ps := range serverResp.PaidServices {
+				costInfo := ""
+				if ps.EstimatedCost != nil && *ps.EstimatedCost != "" {
+					costInfo = fmt.Sprintf(" (estimated cost: %s)", *ps.EstimatedCost)
+				}
+				fmt.Printf("  • %s (%s)%s\n", ps.ServiceName, ps.ServiceType, costInfo)
+			}
+			fmt.Println("\nYou may need to provide API keys or incur additional costs to use this server.")
+
+			// Prompt for confirmation
+			fmt.Print("\nDo you want to continue with the installation? (y/N): ")
+			var response string
+			fmt.Scanln(&response)
+			response = strings.ToLower(strings.TrimSpace(response))
+
+			if response != "y" && response != "yes" {
+				fmt.Println("Installation cancelled.")
+				return nil
+			}
+		}
+
+		// Display fork information if detected
+		if serverResp.ForkInfo != nil && serverResp.ForkInfo.IsFork {
+			fmt.Println("\nℹ Fork Information:")
+			fmt.Printf("  This server is a fork of: %s\n", serverResp.ForkInfo.ParentRepoURL)
+			if serverResp.ForkInfo.ParentNamespace != "" && serverResp.ForkInfo.ParentName != "" {
+				fmt.Printf("  Original: %s/%s\n", serverResp.ForkInfo.ParentNamespace, serverResp.ForkInfo.ParentName)
+			}
+			if serverResp.ForkInfo.ParentTrustScore != nil {
+				fmt.Printf("  Parent trust score: %.1f/100\n", *serverResp.ForkInfo.ParentTrustScore)
+			}
+		}
 
 		// Extract auth method if available
 		authMethod := ""
