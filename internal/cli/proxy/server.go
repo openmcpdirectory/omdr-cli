@@ -2,14 +2,18 @@ package proxy
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"github.com/openmcpdirectory/omdr-cli/internal/cli/cache"
 	clilogger "github.com/openmcpdirectory/omdr-cli/internal/cli/logger"
 )
 
@@ -45,6 +49,7 @@ func NewServer(config Config) *Server {
 func (s *Server) ServeStdio() error {
 	clilogger.Verbose("Starting MCP proxy for %s", s.config.ServerName)
 	clilogger.Verbose("Guard URL: %s", s.config.GuardURL)
+	clilogger.Verbose("Auth mode: %s", s.config.AuthMode)
 
 	// Setup signal handling
 	sigChan := make(chan os.Signal, 1)
@@ -56,9 +61,46 @@ func (s *Server) ServeStdio() error {
 		s.cancel()
 	}()
 
-	// Check guard health
-	if err := s.client.Health(s.ctx); err != nil {
-		clilogger.Verbose("Warning: Guard health check failed: %v", err)
+	// For auth-only mode, authenticate once and get direct URL
+	var directMCPURL string
+	if s.config.AuthMode == "auth_only" {
+		clilogger.Verbose("Auth-only mode: authenticating with Guard...")
+
+		// Try to authenticate and get direct URL
+		directURL, err := s.client.GetDirectURL(s.ctx)
+		if err != nil {
+			clilogger.Verbose("Auth-only authentication failed: %v, falling back to full proxy", err)
+			// Fall back to full proxy mode
+		} else {
+			directMCPURL = directURL.ServerURL
+			clilogger.Verbose("Auth-only mode: received direct URL: %s (expires at: %d)", directMCPURL, directURL.ExpiresAt)
+
+			// Cache the direct URL for future use
+			cacheData := &cache.DirectURLCache{
+				ServerURL: directURL.ServerURL,
+				AgentID:   directURL.AgentID,
+				Tier:      directURL.Tier,
+				RateLimits: cache.RateLimits{
+					RPM: int(directURL.RateLimits.RPM),
+					RPH: int(directURL.RateLimits.RPH),
+				},
+				ExpiresAt: directURL.ExpiresAt,
+				Signature: directURL.Signature,
+			}
+
+			if err := cache.SaveCache(s.config.ServerName, cacheData); err != nil {
+				clilogger.Verbose("Warning: Failed to cache direct URL: %v", err)
+			} else {
+				clilogger.Verbose("Direct URL cached successfully")
+			}
+		}
+	}
+
+	// Check guard health (skip if using direct URL)
+	if directMCPURL == "" {
+		if err := s.client.Health(s.ctx); err != nil {
+			clilogger.Verbose("Warning: Guard health check failed: %v", err)
+		}
 	}
 
 	// Start reading from stdin
@@ -93,8 +135,20 @@ func (s *Server) ServeStdio() error {
 			continue
 		}
 
-		// Forward to guard
-		resp, err := s.client.Forward(s.ctx, &req)
+		// Forward request based on mode
+		var resp *JSONRPCResponse
+		var err error
+
+		if directMCPURL != "" {
+			// Auth-only mode: forward directly to MCP server
+			clilogger.Verbose("Forwarding directly to MCP server: %s", directMCPURL)
+			resp, err = s.forwardDirect(s.ctx, &req, directMCPURL)
+		} else {
+			// Full proxy mode: forward through Guard
+			clilogger.Verbose("Forwarding through Guard")
+			resp, err = s.client.Forward(s.ctx, &req)
+		}
+
 		if err != nil {
 			clilogger.Verbose("Forward error: %v", err)
 			s.writeResponse(NewErrorResponse(req.ID, InternalError, fmt.Sprintf("Proxy error: %v", err)))
@@ -126,6 +180,54 @@ func (s *Server) writeResponse(resp *JSONRPCResponse) {
 	if _, err := os.Stdout.Write(append(data, '\n')); err != nil {
 		clilogger.Verbose("Write error: %v", err)
 	}
+}
+
+// forwardDirect sends a JSON-RPC request directly to the MCP server (auth-only mode)
+func (s *Server) forwardDirect(ctx context.Context, req *JSONRPCRequest, mcpURL string) (*JSONRPCResponse, error) {
+	// Marshal request
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling request: %w", err)
+	}
+
+	// Create HTTP request
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", mcpURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	// Set headers
+	httpReq.Header.Set("Content-Type", "application/json")
+	if req.ID != nil {
+		httpReq.Header.Set("X-Request-ID", fmt.Sprintf("%v", req.ID))
+	}
+
+	// Send request
+	httpClient := &http.Client{Timeout: 30 * time.Second}
+	resp, err := httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("sending request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Read response body
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading response: %w", err)
+	}
+
+	// Handle HTTP errors
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	// Parse JSON-RPC response
+	var jsonrpcResp JSONRPCResponse
+	if err := json.Unmarshal(respBody, &jsonrpcResp); err != nil {
+		return nil, fmt.Errorf("parsing response: %w", err)
+	}
+
+	return &jsonrpcResp, nil
 }
 
 // Close gracefully shuts down the server

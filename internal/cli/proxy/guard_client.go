@@ -126,3 +126,50 @@ func (c *GuardClient) Health(ctx context.Context) error {
 
 	return nil
 }
+
+// DirectURLResponse represents the response from auth-only authentication
+type DirectURLResponse struct {
+	ServerURL  string `json:"server_url"`
+	AgentID    string `json:"agent_id"`
+	Tier       string `json:"tier"`
+	RateLimits struct {
+		RPM int `json:"rpm"`
+		RPH int `json:"rph"`
+	} `json:"rate_limits"`
+	ExpiresAt int64  `json:"expires_at"`
+	Signature string `json:"signature"`
+}
+
+// GetDirectURL authenticates and retrieves a direct connection URL for auth-only mode
+func (c *GuardClient) GetDirectURL(ctx context.Context) (*DirectURLResponse, error) {
+	url := fmt.Sprintf("%s/v1/auth/direct/%s", c.baseURL, c.serverName)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	req.Header.Set("X-OMDR-API-Key", c.apiKey)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("sending request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("authentication failed: HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	var directURL DirectURLResponse
+	if err := json.Unmarshal(body, &directURL); err != nil {
+		return nil, fmt.Errorf("parsing response: %w", err)
+	}
+
+	return &directURL, nil
+}

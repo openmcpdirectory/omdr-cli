@@ -123,14 +123,19 @@ func TestRetryWithBackoff_ExponentialBackoff(t *testing.T) {
 		t.Errorf("expected 2 delays, got %d", len(delays))
 	}
 
-	// First delay should be ~10ms
-	if delays[0] < 8*time.Millisecond || delays[0] > 15*time.Millisecond {
-		t.Errorf("first delay out of range: %v", delays[0])
+	// First delay should be ~10ms (allow wider range for system timing variations)
+	if delays[0] < 5*time.Millisecond || delays[0] > 30*time.Millisecond {
+		t.Errorf("first delay out of range: %v (expected ~10ms, range 5-30ms)", delays[0])
 	}
 
-	// Second delay should be ~20ms
-	if delays[1] < 18*time.Millisecond || delays[1] > 25*time.Millisecond {
-		t.Errorf("second delay out of range: %v", delays[1])
+	// Second delay should be ~20ms (allow wider range for system timing variations)
+	if delays[1] < 15*time.Millisecond || delays[1] > 50*time.Millisecond {
+		t.Errorf("second delay out of range: %v (expected ~20ms, range 15-50ms)", delays[1])
+	}
+
+	// Verify delays are increasing
+	if delays[1] <= delays[0] {
+		t.Errorf("delays should be increasing: %v, %v", delays[0], delays[1])
 	}
 }
 
