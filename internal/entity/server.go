@@ -21,6 +21,7 @@ type Server struct {
 	IsSponsored     bool      `json:"is_sponsored" db:"is_sponsored"`
 	SponsorTier     *string   `json:"sponsor_tier,omitempty" db:"sponsor_tier"`
 	SponsorPriority int       `json:"sponsor_priority" db:"sponsor_priority"`
+	AuthMethod      *string   `json:"auth_method,omitempty" db:"auth_method"`
 	CreatedAt       time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at" db:"updated_at"`
 }

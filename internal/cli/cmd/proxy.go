@@ -11,6 +11,10 @@ import (
 	"github.com/spf13/viper"
 )
 
+var (
+	authMode string
+)
+
 var proxyCmd = &cobra.Command{
 	Use:    "proxy <server>",
 	Short:  "MCP protocol bridge (internal use)",
@@ -43,12 +47,14 @@ var proxyCmd = &cobra.Command{
 
 		clilogger.Verbose("Starting proxy for server: %s", serverName)
 		clilogger.Verbose("Guard URL: %s", guardURL)
+		clilogger.Verbose("Auth mode: %s", authMode)
 
 		// Create and start proxy server
 		server := proxy.NewServer(proxy.Config{
 			ServerName: serverName,
 			APIKey:     apiKey,
 			GuardURL:   guardURL,
+			AuthMode:   authMode,
 		})
 
 		// Serve stdio (blocks until stdin closes or error)
@@ -62,4 +68,5 @@ var proxyCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(proxyCmd)
+	proxyCmd.Flags().StringVar(&authMode, "auth-mode", "full_proxy", "Authentication mode: auth_only or full_proxy")
 }

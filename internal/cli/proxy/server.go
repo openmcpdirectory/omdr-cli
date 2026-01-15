@@ -26,6 +26,7 @@ type Config struct {
 	ServerName string
 	APIKey     string
 	GuardURL   string
+	AuthMode   string // "auth_only" or "full_proxy"
 }
 
 // NewServer creates a new MCP proxy server

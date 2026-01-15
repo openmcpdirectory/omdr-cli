@@ -72,6 +72,13 @@ var installCmd = &cobra.Command{
 
 		clilogger.Verbose("Server fetched: %s/%s version %s", serverResp.Server.Namespace, serverResp.Server.Name, serverResp.Version.Version)
 
+		// Extract auth method if available
+		authMethod := ""
+		if serverResp.Server.AuthMethod != nil {
+			authMethod = *serverResp.Server.AuthMethod
+			clilogger.Verbose("Server auth method: %s", authMethod)
+		}
+
 		// Parse manifest to check runtime requirements
 		var manifest mcpspec.MCPManifest
 		if err := json.Unmarshal(serverResp.Version.Manifest, &manifest); err != nil {
@@ -110,7 +117,7 @@ var installCmd = &cobra.Command{
 		// Check if hosted installation is requested or required
 		if hosted {
 			fmt.Println("\nInstalling as hosted server...")
-			return installHosted(mgr, serverResp.Server, serverResp.Version, manifest, clients)
+			return installHosted(mgr, serverResp.Server, serverResp.Version, manifest, clients, authMethod)
 		}
 
 		// Check runtime requirements for local installation
@@ -225,7 +232,7 @@ func filterClientsByType(clients []detector.MCPClient, clientType string) []dete
 }
 
 // installHosted installs a server as a hosted (proxied) server
-func installHosted(mgr *config.Manager, server entity.Server, version entity.ServerVersion, manifest mcpspec.MCPManifest, clients []detector.MCPClient) error {
+func installHosted(mgr *config.Manager, server entity.Server, version entity.ServerVersion, manifest mcpspec.MCPManifest, clients []detector.MCPClient, authMethod string) error {
 	// Get API key
 	apiKey, err := mgr.Get("auth.token")
 	if err != nil || apiKey == "" {
@@ -242,9 +249,20 @@ func installHosted(mgr *config.Manager, server entity.Server, version entity.Ser
 
 	// Create hosted server config
 	serverKey := fmt.Sprintf("%s/%s", server.Namespace, server.Name)
+
+	// Build proxy args based on auth method
+	proxyArgs := []string{"proxy", serverKey}
+	if authMethod == "auth_only" {
+		proxyArgs = append(proxyArgs, "--auth-mode", "auth_only")
+		clilogger.Verbose("Using auth-only mode for bandwidth optimization")
+		fmt.Println("  ℹ Using auth-only mode (direct connection after authentication)")
+	} else {
+		clilogger.Verbose("Using full proxy mode")
+	}
+
 	hostedConfig := installer.HostedServerConfig{
 		Command: omdrPath,
-		Args:    []string{"proxy", serverKey},
+		Args:    proxyArgs,
 		Env: map[string]string{
 			"OMDR_API_KEY": apiKey,
 		},
@@ -280,7 +298,12 @@ func installHosted(mgr *config.Manager, server entity.Server, version entity.Ser
 
 	fmt.Printf("\nInstalled (hosted): %s/%s@%s\n", server.Namespace, server.Name, version.Version)
 	fmt.Printf("Description: %s\n", server.Description)
-	fmt.Println("\n⚠ Note: This is a hosted server. Usage will be billed according to your subscription.")
+
+	if authMethod == "auth_only" {
+		fmt.Println("\n💡 Tip: This server uses auth-only mode for reduced bandwidth usage.")
+	} else {
+		fmt.Println("\n⚠ Note: This is a hosted server. Usage will be billed according to your subscription.")
+	}
 
 	if len(manifest.Tools) > 0 {
 		fmt.Printf("Tools: %d\n", len(manifest.Tools))
