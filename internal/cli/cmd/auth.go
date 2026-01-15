@@ -56,7 +56,7 @@ var authLoginCmd = &cobra.Command{
 			State   string `json:"state"`
 		}
 
-		if err := apiClient.Get("/api/v1/auth/cli", &authResp); err != nil {
+		if err := apiClient.Get(cmd.Context(), "/api/v1/auth/cli", &authResp); err != nil {
 			return fmt.Errorf("getting auth URL: %w", err)
 		}
 
@@ -84,7 +84,7 @@ var authLoginCmd = &cobra.Command{
 			var user struct {
 				Username string `json:"username"`
 			}
-			if err := apiClient.Get("/api/v1/users/me", &user); err != nil {
+			if err := apiClient.Get(cmd.Context(), "/api/v1/users/me", &user); err != nil {
 				fmt.Println("Authentication successful!")
 				return nil
 			}
@@ -184,7 +184,7 @@ var authStatusCmd = &cobra.Command{
 		var user struct {
 			Username string `json:"username"`
 		}
-		if err := apiClient.Get("/api/v1/users/me", &user); err == nil {
+		if err := apiClient.Get(cmd.Context(), "/api/v1/users/me", &user); err == nil {
 			fmt.Printf("Username: %s\n", user.Username)
 		}
 

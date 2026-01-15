@@ -66,7 +66,7 @@ var installCmd = &cobra.Command{
 		}
 
 		path := fmt.Sprintf("/api/v1/servers/%s/%s", namespace, name)
-		if err := apiClient.Get(path, &serverResp); err != nil {
+		if err := apiClient.Get(cmd.Context(), path, &serverResp); err != nil {
 			return fmt.Errorf("fetching server: %w", err)
 		}
 

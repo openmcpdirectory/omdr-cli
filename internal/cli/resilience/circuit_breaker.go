@@ -81,6 +81,12 @@ func (cb *CircuitBreaker) Call(fn func() error) error {
 	defer cb.mu.Unlock()
 
 	if err != nil {
+		// Check if error should be ignored (e.g. 4xx errors)
+		var ignore *ignoreError
+		if errors.As(err, &ignore) {
+			return err
+		}
+
 		cb.failures++
 		cb.lastFailTime = time.Now()
 
@@ -121,4 +127,23 @@ func (cb *CircuitBreaker) Reset() {
 	defer cb.mu.Unlock()
 	cb.state = StateClosed
 	cb.failures = 0
+}
+
+// ignoreError marks an error as one that should NOT trip the circuit breaker
+type ignoreError struct {
+	err error
+}
+
+func (e *ignoreError) Error() string {
+	return e.err.Error()
+}
+
+func (e *ignoreError) Unwrap() error {
+	return e.err
+}
+
+// PermissionError wraps an error to indicate it should be ignored by the circuit breaker
+// (e.g. 4xx errors, authentication failures)
+func PermissionError(err error) error {
+	return &ignoreError{err: err}
 }

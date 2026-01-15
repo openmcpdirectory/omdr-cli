@@ -57,7 +57,7 @@ var searchCmd = &cobra.Command{
 		}
 
 		var results []entity.SearchResult
-		if err := apiClient.Post("/api/v1/search", searchReq, &results); err != nil {
+		if err := apiClient.Post(cmd.Context(), "/api/v1/search", searchReq, &results); err != nil {
 			// Check for rate limiting
 			if isRateLimited, retryAfter := apiClient.IsRateLimited(err); isRateLimited {
 				return fmt.Errorf("rate limited. Please retry after %v", retryAfter)

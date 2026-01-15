@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -146,7 +147,7 @@ var publishCmd = &cobra.Command{
 			publishReq.DeploymentModel = "hosted_omdr"
 			fmt.Printf("Uploading artifact: %s\n", artifactPath)
 
-			artifactURL, artifactType, err := uploadArtifact(apiClient, artifactPath)
+			artifactURL, artifactType, err := uploadArtifact(cmd.Context(), apiClient, artifactPath)
 			if err != nil {
 				return fmt.Errorf("uploading artifact: %w", err)
 			}
@@ -176,7 +177,7 @@ var publishCmd = &cobra.Command{
 			} `json:"version"`
 		}
 
-		if err := apiClient.Post("/api/v1/servers", publishReq, &publishResp); err != nil {
+		if err := apiClient.Post(cmd.Context(), "/api/v1/servers", publishReq, &publishResp); err != nil {
 			// Check for specific error types
 			if apiErr, ok := err.(*client.APIError); ok {
 				switch apiErr.Code {
@@ -245,7 +246,7 @@ func init() {
 	publishCmd.Flags().Int64Var(&monthlyPrice, "monthly-price", 0, "Monthly subscription price in cents")
 }
 
-func uploadArtifact(apiClient *client.Client, artifactPath string) (string, string, error) {
+func uploadArtifact(ctx context.Context, apiClient *client.Client, artifactPath string) (string, string, error) {
 	file, err := os.Open(artifactPath)
 	if err != nil {
 		return "", "", fmt.Errorf("opening artifact file: %w", err)
@@ -288,7 +289,7 @@ func uploadArtifact(apiClient *client.Client, artifactPath string) (string, stri
 		ArtifactType string `json:"artifact_type"`
 	}
 
-	if err := apiClient.PostMultipart("/api/v1/artifacts/upload", writer.FormDataContentType(), body, &uploadResp); err != nil {
+	if err := apiClient.PostMultipart(ctx, "/api/v1/artifacts/upload", writer.FormDataContentType(), body, &uploadResp); err != nil {
 		return "", "", fmt.Errorf("uploading artifact: %w", err)
 	}
 

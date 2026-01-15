@@ -44,6 +44,11 @@ func RetryWithBackoff(ctx context.Context, config RetryConfig, fn func() error) 
 		if err := fn(); err != nil {
 			lastErr = err
 
+			// Check if error is retryable
+			if !IsRetryableError(err) {
+				return err
+			}
+
 			// Calculate next delay with exponential backoff
 			delay = time.Duration(float64(delay) * config.Multiplier)
 			if delay > config.MaxDelay {

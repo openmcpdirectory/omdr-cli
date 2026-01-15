@@ -282,7 +282,7 @@ func checkNetworkConnectivity() CheckResult {
 	done := make(chan error, 1)
 	go func() {
 		var result interface{}
-		done <- apiClient.Get("/api/v1/servers?limit=1", &result)
+		done <- apiClient.Get(ctx, "/api/v1/servers?limit=1", &result)
 	}()
 
 	select {
