@@ -8,13 +8,16 @@ import (
 
 // User represents a user account in the registry
 type User struct {
-	ID        uuid.UUID `json:"id" db:"id"`
-	GitHubID  int64     `json:"github_id" db:"github_id" validate:"required"`
-	Username  string    `json:"username" db:"username" validate:"required"`
-	Email     string    `json:"email" db:"email"`
-	AvatarURL string    `json:"avatar_url" db:"avatar_url"`
-	CreatedAt time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
+	ID             uuid.UUID `json:"id" db:"id"`
+	FullName       string    `json:"full_name" db:"full_name" validate:"required"`
+	Username       string    `json:"username" db:"username" validate:"required"`
+	Email          string    `json:"email" db:"email"`
+	AvatarURL      string    `json:"avatar_url" db:"avatar_url"`
+	Provider       string    `json:"provider" db:"provider" validate:"required"`
+	ProviderUserID string    `json:"provider_user_id" db:"provider_user_id" validate:"required"`
+	EmailVerified  bool      `json:"email_verified" db:"email_verified"`
+	CreatedAt      time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // Namespace represents a reserved namespace for server publishing
