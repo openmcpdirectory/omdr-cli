@@ -97,7 +97,7 @@ var publishCmd = &cobra.Command{
 		// Get API client
 		apiURL := viper.GetString("api_url")
 		if apiURL == "" {
-			apiURL = "http://localhost:8080"
+			apiURL = "https://cli.omdr.dev"
 		}
 
 		apiClient := client.NewClient(apiURL)

@@ -5,13 +5,12 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
-	"runtime"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/openmcpdirectory/omdr-cli/internal/cli/client"
 	"github.com/openmcpdirectory/omdr-cli/internal/cli/config"
+	"github.com/pkg/browser"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -30,75 +29,182 @@ var authCmd = &cobra.Command{
 var authLoginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Authenticate with the OMDR registry",
-	Long:  "Open a browser to authenticate with GitHub OAuth and store the token locally",
+	Long:  "Authenticate with GitHub using device flow (no browser required) or OAuth callback",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		apiURL := viper.GetString("api_url")
-		if apiURL == "" {
-			apiURL = "http://localhost:8080"
+		useDeviceFlow, _ := cmd.Flags().GetBool("device-flow")
+
+		if useDeviceFlow {
+			return deviceFlowLogin(cmd.Context())
 		}
+		return browserLogin(cmd.Context())
+	},
+}
 
-		apiClient := client.NewClient(apiURL)
+func deviceFlowLogin(ctx context.Context) error {
+	apiURL := viper.GetString("api_url")
+	if apiURL == "" {
+		apiURL = "https://cli.omdr.dev"
+	}
 
-		// Start local callback server
-		tokenChan := make(chan string, 1)
-		errChan := make(chan error, 1)
+	apiClient := client.NewClient(apiURL)
 
-		srv := startCallbackServer(tokenChan, errChan)
-		defer func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			srv.Shutdown(ctx)
-		}()
+	// Request device code
+	var deviceResp struct {
+		DeviceCode      string `json:"device_code"`
+		UserCode        string `json:"user_code"`
+		VerificationURI string `json:"verification_uri"`
+		ExpiresIn       int    `json:"expires_in"`
+		Interval        int    `json:"interval"`
+	}
 
-		// Get auth URL from API
-		var authResp struct {
-			AuthURL string `json:"auth_url"`
-			State   string `json:"state"`
-		}
+	if err := apiClient.Post(ctx, "/api/v1/auth/device/code", nil, &deviceResp); err != nil {
+		return fmt.Errorf("requesting device code: %w", err)
+	}
 
-		if err := apiClient.Get(cmd.Context(), "/api/v1/auth/cli", &authResp); err != nil {
-			return fmt.Errorf("getting auth URL: %w", err)
-		}
+	// Display instructions to user
+	fmt.Println("\nTo authenticate, visit:")
+	fmt.Printf("  %s\n\n", deviceResp.VerificationURI)
+	fmt.Printf("And enter code: %s\n\n", deviceResp.UserCode)
+	fmt.Println("Waiting for authentication...")
 
-		// Open browser
-		fmt.Println("Opening browser for authentication...")
-		if err := openBrowser(authResp.AuthURL); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to open browser automatically. Please visit:\n%s\n", authResp.AuthURL)
-		}
+	// Poll for token
+	interval := time.Duration(deviceResp.Interval) * time.Second
+	if interval < 5*time.Second {
+		interval = 5 * time.Second
+	}
 
-		// Wait for callback or timeout
+	timeout := time.Duration(deviceResp.ExpiresIn) * time.Second
+	deadline := time.Now().Add(timeout)
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
 		select {
-		case token := <-tokenChan:
-			// Store token in config
-			mgr, err := config.NewManager()
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			if time.Now().After(deadline) {
+				return fmt.Errorf("authentication timeout - code expired")
+			}
+
+			var tokenResp struct {
+				Token string `json:"token"`
+				Error string `json:"error"`
+			}
+
+			payload := map[string]string{"device_code": deviceResp.DeviceCode}
+			err := apiClient.Post(ctx, "/api/v1/auth/device/token", payload, &tokenResp)
+
 			if err != nil {
-				return fmt.Errorf("initializing config manager: %w", err)
+				// Continue polling on network errors
+				continue
 			}
 
-			if err := mgr.Set(tokenKey, token); err != nil {
-				return fmt.Errorf("storing token: %w", err)
+			if tokenResp.Error == "authorization_pending" {
+				// Still waiting for user
+				continue
 			}
 
-			// Get user info to display username
-			apiClient.SetToken(token)
-			var user struct {
-				Username string `json:"username"`
+			if tokenResp.Error != "" {
+				return fmt.Errorf("authentication failed: %s", tokenResp.Error)
 			}
-			if err := apiClient.Get(cmd.Context(), "/api/v1/users/me", &user); err != nil {
-				fmt.Println("Authentication successful!")
+
+			if tokenResp.Token != "" {
+				// Success! Store token
+				mgr, err := config.NewManager()
+				if err != nil {
+					return fmt.Errorf("initializing config manager: %w", err)
+				}
+
+				if err := mgr.Set(tokenKey, tokenResp.Token); err != nil {
+					return fmt.Errorf("storing token: %w", err)
+				}
+
+				// Get user info
+				apiClient.SetToken(tokenResp.Token)
+				var user struct {
+					Username string `json:"username"`
+				}
+				if err := apiClient.Get(ctx, "/api/v1/users/me", &user); err != nil {
+					fmt.Println("\nAuthentication successful!")
+					return nil
+				}
+
+				fmt.Printf("\nAuthentication successful! Logged in as %s\n", user.Username)
 				return nil
 			}
-
-			fmt.Printf("Authentication successful! Logged in as %s\n", user.Username)
-			return nil
-
-		case err := <-errChan:
-			return fmt.Errorf("authentication failed: %w", err)
-
-		case <-time.After(5 * time.Minute):
-			return fmt.Errorf("authentication timeout - no callback received")
 		}
-	},
+	}
+}
+
+func browserLogin(ctx context.Context) error {
+	apiURL := viper.GetString("api_url")
+	if apiURL == "" {
+		apiURL = "https://cli.omdr.dev"
+	}
+
+	apiClient := client.NewClient(apiURL)
+
+	// Start local callback server
+	tokenChan := make(chan string, 1)
+	errChan := make(chan error, 1)
+
+	srv := startCallbackServer(tokenChan, errChan)
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		srv.Shutdown(shutdownCtx)
+	}()
+
+	// Get auth URL from API
+	var authResp struct {
+		AuthURL string `json:"auth_url"`
+		State   string `json:"state"`
+	}
+
+	if err := apiClient.Get(ctx, "/api/v1/auth/cli", &authResp); err != nil {
+		return fmt.Errorf("getting auth URL: %w", err)
+	}
+
+	// Open browser
+	fmt.Println("Opening browser for authentication...")
+	if err := browser.OpenURL(authResp.AuthURL); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to open browser automatically. Please visit:\n%s\n", authResp.AuthURL)
+	}
+
+	// Wait for callback or timeout
+	select {
+	case token := <-tokenChan:
+		// Store token in config
+		mgr, err := config.NewManager()
+		if err != nil {
+			return fmt.Errorf("initializing config manager: %w", err)
+		}
+
+		if err := mgr.Set(tokenKey, token); err != nil {
+			return fmt.Errorf("storing token: %w", err)
+		}
+
+		// Get user info to display username
+		apiClient.SetToken(token)
+		var user struct {
+			Username string `json:"username"`
+		}
+		if err := apiClient.Get(ctx, "/api/v1/users/me", &user); err != nil {
+			fmt.Println("Authentication successful!")
+			return nil
+		}
+
+		fmt.Printf("Authentication successful! Logged in as %s\n", user.Username)
+		return nil
+
+	case err := <-errChan:
+		return fmt.Errorf("authentication failed: %w", err)
+
+	case <-time.After(5 * time.Minute):
+		return fmt.Errorf("authentication timeout - no callback received")
+	}
 }
 
 var authLogoutCmd = &cobra.Command{
@@ -175,7 +281,7 @@ var authStatusCmd = &cobra.Command{
 		// Try to get username from API
 		apiURL := viper.GetString("api_url")
 		if apiURL == "" {
-			apiURL = "http://localhost:8080"
+			apiURL = "https://cli.omdr.dev"
 		}
 
 		apiClient := client.NewClient(apiURL)
@@ -231,26 +337,12 @@ func startCallbackServer(tokenChan chan string, errChan chan error) *http.Server
 	return srv
 }
 
-func openBrowser(url string) error {
-	var cmd *exec.Cmd
-
-	switch runtime.GOOS {
-	case "darwin":
-		cmd = exec.Command("open", url)
-	case "windows":
-		cmd = exec.Command("cmd", "/c", "start", url)
-	case "linux":
-		cmd = exec.Command("xdg-open", url)
-	default:
-		return fmt.Errorf("unsupported platform")
-	}
-
-	return cmd.Start()
-}
-
 func init() {
 	rootCmd.AddCommand(authCmd)
 	authCmd.AddCommand(authLoginCmd)
 	authCmd.AddCommand(authLogoutCmd)
 	authCmd.AddCommand(authStatusCmd)
+
+	// TODO: Add device-flow flag to login command (pending `api` implementation)
+	// authLoginCmd.Flags().Bool("device-flow", false, "Use GitHub device flow (no browser required)")
 }
