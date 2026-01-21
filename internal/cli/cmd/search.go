@@ -56,8 +56,13 @@ var searchCmd = &cobra.Command{
 			fmt.Printf("Searching for: %s\n", query)
 		}
 
-		var results []entity.SearchResult
-		if err := apiClient.Post(cmd.Context(), "/api/v1/search", searchReq, &results); err != nil {
+		var response struct {
+			Results []entity.SearchResult `json:"results"`
+			Query   string                `json:"query"`
+			Limit   int                   `json:"limit"`
+			Offset  int                   `json:"offset"`
+		}
+		if err := apiClient.Post(cmd.Context(), "/api/v1/search", searchReq, &response); err != nil {
 			// Check for rate limiting
 			if isRateLimited, retryAfter := apiClient.IsRateLimited(err); isRateLimited {
 				return fmt.Errorf("rate limited. Please retry after %v", retryAfter)
@@ -66,7 +71,7 @@ var searchCmd = &cobra.Command{
 		}
 
 		// Handle empty results
-		if len(results) == 0 {
+		if len(response.Results) == 0 {
 			fmt.Println("No servers found matching your query.")
 			fmt.Println("\nTry:")
 			fmt.Println("  - Using different search terms")
@@ -76,7 +81,7 @@ var searchCmd = &cobra.Command{
 		}
 
 		// Display results in formatted table
-		displaySearchResults(results)
+		displaySearchResults(response.Results)
 
 		return nil
 	},
