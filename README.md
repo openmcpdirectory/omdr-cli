@@ -1,7 +1,5 @@
 # OMDR CLI
 
-> ⚠️ **Under Active Development** - not ready for use yet. Core functionality is still being built.
-
 Official command-line interface for the [Open MCP Directory](https://openmcpdirectory.com) - discover, install, and manage MCP servers.
 
 Visit [openmcpdirectory.com](https://openmcpdirectory.com) to explore the directory.
@@ -11,11 +9,11 @@ Visit [openmcpdirectory.com](https://openmcpdirectory.com) to explore the direct
 The OMDR CLI simplifies MCP server management:
 
 - **Discovery**: Search the registry for MCP servers
-- **Installation**: Auto-configure Claude Desktop, Cursor, VS Code
+- **Installation**: Auto-configure Claude Desktop, Cursor, VS Code, Windsurf, Zed, Cline, Claude Code, and Codex
 - **Local Servers**: Download and run servers as local subprocesses (100% free)
 - **Hosted Servers**: Proxy to OMDR-hosted servers with usage-based billing
 - **Publishing**: Publish your own MCP servers to the registry
-- **Monetization**: Set pricing and receive payouts via Stripe Connect
+- **Monetization**: Set pricing and receive payouts via Dodo Payments
 
 ## Deployment Models
 
@@ -121,26 +119,32 @@ irm https://raw.githubusercontent.com/openmcpdirectory/omdr-cli/main/distributio
 ## Quick Start
 
 ```bash
-# Login to OMDR
+# Login to OMDR (browser)
 omdr auth login
+
+# Login without a browser (device flow)
+omdr auth login --device-flow
 
 # Search for MCP servers
 omdr search "stripe payments"
 
-# Install a free local server (auto-detects Claude, Cursor, VS Code)
+# Install a free local server (auto-detects Claude, Cursor, VS Code, Windsurf, Zed, Cline, Codex...)
 omdr install @stripe/payments
 
 # Install a paid hosted server
 omdr install --hosted @creator/premium-tool
 
-# Install to specific client
-omdr install @stripe/payments --client vscode
+# Install to a specific client
+omdr install @stripe/payments --client windsurf
 
-# Install using custom config path
+# Install using a custom config path
 omdr install @stripe/payments --config-path ~/.config/Code/User/mcp.json
 
 # List installed servers
 omdr list
+
+# Check for updates
+omdr update
 
 # Check your environment
 omdr doctor
@@ -150,28 +154,31 @@ omdr doctor
 
 ### Authentication
 ```bash
-omdr auth login          # Login with browser OAuth
-omdr auth logout         # Clear stored credentials
-omdr auth status         # Check authentication status
+omdr auth login                 # Login via browser OAuth
+omdr auth login --device-flow   # Login without a browser (device flow)
+omdr auth logout                # Clear stored credentials
+omdr auth status                # Show current auth state
 ```
 
 ### Discovery & Installation
 ```bash
-omdr search <query>                    # Search registry
-omdr install <package>                 # Install local server
-omdr install --hosted <package>        # Install hosted server
-omdr install --client <type> <package> # Target specific client
-omdr list                              # List installed servers
-omdr uninstall <package>               # Remove server
+omdr search <query>                     # Search the registry
+omdr install <package>                  # Install a local server
+omdr install --hosted <package>         # Install a hosted server
+omdr install --client <type> <package>  # Target a specific client
+omdr list                               # List installed servers
+omdr uninstall <package>                # Remove a server
+omdr update [server]                    # Check for and apply updates
 ```
 
-### Billing (Hosted Servers)
+Supported `--client` values: `claude`, `cursor`, `vscode`, `windsurf`, `zed`, `cline`, `claude-code`, `codex`
+
+### Billing
 ```bash
-omdr subscribe <tier>           # Subscribe to Pro/Enterprise
-omdr credits buy <amount>       # Purchase credits ($1 = 100 credits)
-omdr credits balance            # Check credit balance
-omdr usage history              # View usage history
-omdr invoices list              # List invoices
+omdr credits           # Show balance and recent transactions
+omdr usage             # Show current billing period usage
+omdr invoices          # List billing invoices
+omdr pricing           # Show subscription tiers and pricing
 ```
 
 ### Publishing (Creators)
@@ -180,30 +187,41 @@ omdr publish                                    # Publish local server (free)
 omdr publish --deployment hosted_omdr \
   --artifact ./server.wasm \
   --pricing per_call --price-per-call 10        # Publish hosted WASM ($0.10/call)
-omdr publish --github https://github.com/user/repo  # Publish from GitHub repo (public)
+omdr publish --github https://github.com/user/repo  # Publish from GitHub (public)
 omdr publish --github https://github.com/user/private-repo \
   --github-token ghp_xxxxx                      # Publish from private GitHub repo
 omdr publish --self-hosted https://api.example.com  # Publish self-hosted endpoint
-omdr pricing set <package>                      # Update pricing model
-omdr payouts setup                              # Complete Stripe Connect onboarding
-omdr earnings                                   # View earnings and payouts
+omdr earnings summary                           # View earnings summary
+omdr earnings payouts                           # View payout history
 ```
 
 ### Utilities
 ```bash
 omdr doctor                     # Check environment and dependencies
 omdr version                    # Show CLI version
+omdr version --json             # Output version as JSON
 omdr help                       # Show help
+
+# Global flags available on all commands:
+#   --json        Output in JSON format
+#   --no-banner   Suppress the banner
+#   -v, --verbose Verbose output
 ```
 
 ## Supported Clients
 
 OMDR automatically detects and configures:
 
-- **Claude Desktop** - `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
-- **Cursor** - `~/.cursor/mcp.json`
-- **VS Code** - `~/.config/Code/User/mcp.json` (Linux/macOS), `%APPDATA%\Code\User\mcp.json` (Windows)
-- **Zed** - `~/.config/zed/mcp.json`
+| Client | Config location |
+|--------|-----------------|
+| **Claude Desktop** | `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) |
+| **Cursor** | `~/.cursor/mcp.json` |
+| **VS Code** | `~/.config/Code/User/mcp.json` (Linux/macOS) · `%APPDATA%\Code\User\mcp.json` (Windows) |
+| **Windsurf** | `~/.codeium/windsurf/mcp_config.json` |
+| **Zed** | `~/.config/zed/settings.json` (Linux/macOS) · `%APPDATA%\Zed\settings.json` (Windows) |
+| **Cline** | VS Code globalStorage `saoudrizwan.claude-dev/cline_mcp_settings.json` |
+| **Claude Code** | Managed via `claude mcp add` CLI |
+| **Codex** | `~/.codex/config.toml` |
 
 Or use `--config-path` to specify any custom MCP config file.
 
@@ -325,21 +343,26 @@ make install
 /omdr-cli
 ├── /cmd/omdr              # Main CLI entrypoint
 ├── /internal/cli
-│   ├── /cmd               # Cobra commands (install, search, auth, etc.)
+│   ├── /cmd               # Cobra commands (auth, install, search, list, uninstall, update,
+│   │                      #   publish, credits, usage, invoices, pricing, earnings, doctor, version)
 │   ├── /client            # HTTP client for registry API
 │   ├── /config            # Config file management
-│   ├── /detector          # MCP client detection
-│   ├── /installer         # Config patching logic
+│   ├── /detector          # MCP client detection (8 clients)
+│   ├── /installer         # Config patching (JSON / TOML / subprocess)
 │   ├── /proxy             # MCP proxy server (stdio ↔ HTTP)
 │   │   ├── server.go      # JSON-RPC stdio server
 │   │   ├── guard_client.go # HTTP client for omdr-guard
 │   │   └── protocol.go    # JSON-RPC 2.0 types
+│   ├── /registry          # Local server registry (~/.omdr/servers.yaml)
 │   ├── /runtime           # Runtime requirement checks
+│   ├── /ui                # Output helpers (Success, Error, Table, JSON)
 │   └── /logger            # Logging utilities
 ├── /pkg/mcp-spec          # MCP manifest types (shared with main repo)
 ├── /distribution
+│   ├── /docker            # Dockerfile.cli
 │   ├── /installers        # Shell/PowerShell install scripts
-│   └── /packages          # Homebrew/Scoop package definitions
+│   ├── /npm               # @omdr/cli npm wrapper
+│   └── /cargo             # omdr-cli cargo wrapper
 └── /internal/entity       # Domain entities (Server, Version, etc.)
 ```
 
@@ -444,16 +467,14 @@ OMDR forwards requests to your endpoint after billing.
 - **Subscription**: Monthly fee for unlimited access (coming soon)
 - **Hybrid**: Base subscription + per-call overage (coming soon)
 
-### Complete Stripe Connect Onboarding
+### Receiving Payouts
 
-To receive payouts:
-```bash
-omdr payouts setup
-```
+Earnings are processed via Dodo Payments. Complete onboarding via the creator dashboard at [openmcpdirectory.com](https://openmcpdirectory.com).
 
-View earnings:
+View earnings from the CLI:
 ```bash
-omdr earnings
+omdr earnings summary   # Balance and totals
+omdr earnings payouts   # Payout history
 ```
 
 Payouts are processed weekly with a $10 minimum threshold.
@@ -461,13 +482,13 @@ Payouts are processed weekly with a $10 minimum threshold.
 ## Troubleshooting
 
 ### "No MCP clients detected"
-Install Claude Desktop, Cursor, or VS Code with MCP extension, or use `--config-path` to specify a custom config file.
+Install one of the supported clients (Claude Desktop, Cursor, VS Code, Windsurf, Zed, Cline, Claude Code, or Codex), or use `--config-path` to specify a custom config file.
 
 ### "Authentication required"
 Run `omdr auth login` to authenticate with OMDR.
 
 ### "Insufficient credits"
-For hosted servers, purchase credits: `omdr credits buy 50` ($50 = 5000 credits)
+For hosted servers, purchase credits via the dashboard at [openmcpdirectory.com](https://openmcpdirectory.com) or run `omdr credits` to check your balance.
 
 ### "Runtime check failed"
 Install required runtime (Node.js, Python, Docker) based on server requirements.
