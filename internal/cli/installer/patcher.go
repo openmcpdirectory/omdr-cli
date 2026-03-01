@@ -4,8 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
+
+	toml "github.com/pelletier/go-toml/v2"
 
 	"github.com/openmcpdirectory/omdr-cli/internal/cli/detector"
 	"github.com/openmcpdirectory/omdr-cli/internal/cli/registry"
@@ -15,7 +20,7 @@ import (
 
 // ConfigPatcher handles modification of MCP client configuration files
 type ConfigPatcher struct {
-	RegistryHome string // Optional override for testing
+	RegistryHome string
 }
 
 // NewConfigPatcher creates a new config patcher
@@ -24,107 +29,36 @@ func NewConfigPatcher() *ConfigPatcher {
 }
 
 // PatchConfig adds an MCP server to a client's configuration file
-// It handles missing/empty files, creates backups, and preserves existing entries
 func (p *ConfigPatcher) PatchConfig(client detector.MCPClient, serverVersion entity.ServerVersion) error {
-	// Parse the manifest to get runtime config
 	var manifest mcpspec.MCPManifest
 	if err := json.Unmarshal(serverVersion.Manifest, &manifest); err != nil {
 		return fmt.Errorf("parsing manifest: %w", err)
 	}
 
-	// Ensure config directory exists
-	configDir := filepath.Dir(client.ConfigPath)
-	if err := os.MkdirAll(configDir, 0755); err != nil {
-		return fmt.Errorf("creating config directory: %w", err)
-	}
-
-	// Read existing config (handle missing/empty)
-	data, err := os.ReadFile(client.ConfigPath)
-	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("reading config: %w", err)
-	}
-
-	// Parse config (handle empty/missing file)
-	var config map[string]interface{}
-	if len(data) > 0 {
-		if err := json.Unmarshal(data, &config); err != nil {
-			return fmt.Errorf("parsing config (malformed JSON): %w", err)
-		}
-	} else {
-		config = make(map[string]interface{})
-	}
-
-	// Create backup before modification (only if file exists and has content)
-	if len(data) > 0 {
-		backupPath := fmt.Sprintf("%s.backup.%d", client.ConfigPath, time.Now().Unix())
-		if err := os.WriteFile(backupPath, data, 0644); err != nil {
-			return fmt.Errorf("creating backup: %w", err)
-		}
-	}
-
-	// Get or create mcpServers section
-	mcpServers, ok := config["mcpServers"].(map[string]interface{})
-	if !ok {
-		mcpServers = make(map[string]interface{})
-	}
-
-	// Build server key (namespace/name format)
 	serverKey := fmt.Sprintf("%s/%s", manifest.Name, serverVersion.Version)
 
-	// Register server in local registry
 	var reg *registry.LocalRegistry
 	var regErr error
-
 	if p.RegistryHome != "" {
 		reg, regErr = registry.NewLocalRegistryWithHome(p.RegistryHome)
 	} else {
 		reg, regErr = registry.NewLocalRegistry()
 	}
-
 	if regErr != nil {
 		return fmt.Errorf("initializing registry: %w", regErr)
 	}
 
-	serverConfigData := registry.ServerConfig{
+	if err := reg.Register(serverKey, registry.ServerConfig{
 		Command: manifest.Runtime.Command,
 		Args:    manifest.Runtime.Args,
 		Env:     manifest.Runtime.Env,
-	}
-
-	if err := reg.Register(serverKey, serverConfigData); err != nil {
+	}); err != nil {
 		return fmt.Errorf("registering server: %w", err)
 	}
 
-	// Build server config for the client (using omdr run)
-	// We need the absolute path to the omdr executable or assume it's in PATH.
-	// Users usually have omdr in PATH.
-	omdrCmd := "omdr"
-	executable, err := os.Executable()
-	if err == nil {
-		omdrCmd = executable
-	}
+	omdrCmd := resolveOmdrBinary()
 
-	clientServerConfig := map[string]interface{}{
-		"command": omdrCmd,
-		"args":    []string{"run", serverKey},
-		// We don't verify env here, they are injected by omdr run
-	}
-
-	// Add/update server entry (preserves existing entries)
-	mcpServers[serverKey] = clientServerConfig
-	config["mcpServers"] = mcpServers
-
-	// Write updated config with proper formatting
-	output, err := json.MarshalIndent(config, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshaling config: %w", err)
-	}
-
-	if err := os.WriteFile(client.ConfigPath, output, 0644); err != nil {
-		return fmt.Errorf("writing config: %w", err)
-	}
-
-	return nil
+	return p.patchClientConfig(client, serverKey, omdrCmd, []string{"run", serverKey}, nil)
 }
 
 // HostedServerConfig represents configuration for a hosted server
@@ -136,29 +70,53 @@ type HostedServerConfig struct {
 
 // PatchHostedConfig adds a hosted MCP server to a client's configuration
 func (p *ConfigPatcher) PatchHostedConfig(client detector.MCPClient, server entity.Server, hostedConfig HostedServerConfig) error {
-	// Ensure config directory exists
+	serverKey := fmt.Sprintf("%s-%s", server.Namespace, server.Name)
+	return p.patchClientConfig(client, serverKey, hostedConfig.Command, hostedConfig.Args, hostedConfig.Env)
+}
+
+// RemoveServerFromConfig removes an MCP server entry from a client config
+func (p *ConfigPatcher) RemoveServerFromConfig(client detector.MCPClient, serverKey string) error {
+	switch client.Type {
+	case detector.ClientTypeClaudeCode:
+		return removeFromClaudeCode(serverKey)
+	case detector.ClientTypeCodex:
+		return removeFromCodexTOML(client.ConfigPath, serverKey)
+	default:
+		return removeFromJSONConfig(client, serverKey)
+	}
+}
+
+func (p *ConfigPatcher) patchClientConfig(client detector.MCPClient, serverKey, command string, args []string, env map[string]string) error {
+	switch client.Type {
+	case detector.ClientTypeClaudeCode:
+		return patchClaudeCode(serverKey, command, args, env)
+	case detector.ClientTypeCodex:
+		return patchCodexTOML(client.ConfigPath, serverKey, command, args, env)
+	default:
+		return patchJSONConfig(client, serverKey, command, args, env)
+	}
+}
+
+func patchJSONConfig(client detector.MCPClient, serverKey, command string, args []string, env map[string]string) error {
 	configDir := filepath.Dir(client.ConfigPath)
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		return fmt.Errorf("creating config directory: %w", err)
 	}
 
-	// Read existing config
 	data, err := os.ReadFile(client.ConfigPath)
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("reading config: %w", err)
 	}
 
-	// Parse config
 	var config map[string]interface{}
 	if len(data) > 0 {
 		if err := json.Unmarshal(data, &config); err != nil {
-			return fmt.Errorf("parsing config: %w", err)
+			return fmt.Errorf("parsing config (malformed JSON): %w", err)
 		}
 	} else {
 		config = make(map[string]interface{})
 	}
 
-	// Create backup
 	if len(data) > 0 {
 		backupPath := fmt.Sprintf("%s.backup.%d", client.ConfigPath, time.Now().Unix())
 		if err := os.WriteFile(backupPath, data, 0644); err != nil {
@@ -166,38 +124,209 @@ func (p *ConfigPatcher) PatchHostedConfig(client detector.MCPClient, server enti
 		}
 	}
 
-	// Get or create mcpServers section
-	mcpServers, ok := config["mcpServers"].(map[string]interface{})
+	configKey := detector.ConfigKeyForClient(client.Type)
+
+	servers, ok := config[configKey].(map[string]interface{})
 	if !ok {
-		mcpServers = make(map[string]interface{})
+		servers = make(map[string]interface{})
 	}
 
-	// Build server key
-	serverKey := fmt.Sprintf("%s-%s", server.Namespace, server.Name)
-
-	// Build hosted server config
-	serverConfig := map[string]interface{}{
-		"command": hostedConfig.Command,
-		"args":    hostedConfig.Args,
+	// Wrap command on Windows for npx-based commands in some clients
+	cmd := command
+	finalArgs := args
+	if runtime.GOOS == "windows" && needsCmdWrapper(command) {
+		cmd = "cmd"
+		finalArgs = append([]string{"/c", command}, args...)
 	}
 
-	if len(hostedConfig.Env) > 0 {
-		serverConfig["env"] = hostedConfig.Env
+	entry := map[string]interface{}{
+		"command": cmd,
+		"args":    finalArgs,
 	}
 
-	// Add server entry
-	mcpServers[serverKey] = serverConfig
-	config["mcpServers"] = mcpServers
+	if len(env) > 0 {
+		entry["env"] = env
+	}
 
-	// Write updated config
+	servers[serverKey] = entry
+	config[configKey] = servers
+
 	output, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshaling config: %w", err)
 	}
 
-	if err := os.WriteFile(client.ConfigPath, output, 0644); err != nil {
-		return fmt.Errorf("writing config: %w", err)
+	return os.WriteFile(client.ConfigPath, output, 0644)
+}
+
+func removeFromJSONConfig(client detector.MCPClient, serverKey string) error {
+	data, err := os.ReadFile(client.ConfigPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("reading config: %w", err)
 	}
 
+	var config map[string]interface{}
+	if err := json.Unmarshal(data, &config); err != nil {
+		return fmt.Errorf("parsing config: %w", err)
+	}
+
+	backupPath := fmt.Sprintf("%s.backup.%d", client.ConfigPath, time.Now().Unix())
+	if err := os.WriteFile(backupPath, data, 0644); err != nil {
+		return fmt.Errorf("creating backup: %w", err)
+	}
+
+	configKey := detector.ConfigKeyForClient(client.Type)
+	if servers, ok := config[configKey].(map[string]interface{}); ok {
+		delete(servers, serverKey)
+		config[configKey] = servers
+	}
+
+	output, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshaling config: %w", err)
+	}
+
+	return os.WriteFile(client.ConfigPath, output, 0644)
+}
+
+func patchClaudeCode(serverKey, command string, args []string, env map[string]string) error {
+	cmdArgs := []string{"mcp", "add", "--transport", "stdio", sanitizeServerKey(serverKey), "--"}
+	cmdArgs = append(cmdArgs, command)
+	cmdArgs = append(cmdArgs, args...)
+
+	cmd := exec.Command("claude", cmdArgs...)
+	for k, v := range env {
+		cmd.Env = append(os.Environ(), fmt.Sprintf("%s=%s", k, v))
+	}
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("claude mcp add failed: %s: %w", string(output), err)
+	}
 	return nil
+}
+
+func removeFromClaudeCode(serverKey string) error {
+	cmd := exec.Command("claude", "mcp", "remove", sanitizeServerKey(serverKey))
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("claude mcp remove failed: %s: %w", string(output), err)
+	}
+	return nil
+}
+
+// codexConfig represents the top-level Codex config.toml structure
+type codexConfig struct {
+	MCPServers map[string]codexServerEntry `toml:"mcp_servers"`
+	Remaining  map[string]interface{}      `toml:"-"`
+}
+
+type codexServerEntry struct {
+	Command string            `toml:"command,omitempty"`
+	Args    []string          `toml:"args,omitempty"`
+	Env     map[string]string `toml:"env,omitempty"`
+}
+
+func patchCodexTOML(configPath, serverKey, command string, args []string, env map[string]string) error {
+	configDir := filepath.Dir(configPath)
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return fmt.Errorf("creating config directory: %w", err)
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("reading config: %w", err)
+	}
+
+	if len(data) > 0 {
+		backupPath := fmt.Sprintf("%s.backup.%d", configPath, time.Now().Unix())
+		if err := os.WriteFile(backupPath, data, 0644); err != nil {
+			return fmt.Errorf("creating backup: %w", err)
+		}
+	}
+
+	// Parse existing as generic map to preserve unknown fields
+	var raw map[string]interface{}
+	if len(data) > 0 {
+		if err := toml.Unmarshal(data, &raw); err != nil {
+			return fmt.Errorf("parsing config: %w", err)
+		}
+	} else {
+		raw = make(map[string]interface{})
+	}
+
+	servers, _ := raw["mcp_servers"].(map[string]interface{})
+	if servers == nil {
+		servers = make(map[string]interface{})
+	}
+
+	key := sanitizeServerKey(serverKey)
+	entry := map[string]interface{}{
+		"command": command,
+		"args":    args,
+	}
+	if len(env) > 0 {
+		entry["env"] = env
+	}
+	servers[key] = entry
+	raw["mcp_servers"] = servers
+
+	out, err := toml.Marshal(raw)
+	if err != nil {
+		return fmt.Errorf("marshaling config: %w", err)
+	}
+
+	return os.WriteFile(configPath, out, 0644)
+}
+
+func removeFromCodexTOML(configPath, serverKey string) error {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("reading config: %w", err)
+	}
+
+	backupPath := fmt.Sprintf("%s.backup.%d", configPath, time.Now().Unix())
+	if err := os.WriteFile(backupPath, data, 0644); err != nil {
+		return fmt.Errorf("creating backup: %w", err)
+	}
+
+	var raw map[string]interface{}
+	if err := toml.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("parsing config: %w", err)
+	}
+
+	if servers, ok := raw["mcp_servers"].(map[string]interface{}); ok {
+		delete(servers, sanitizeServerKey(serverKey))
+		raw["mcp_servers"] = servers
+	}
+
+	out, err := toml.Marshal(raw)
+	if err != nil {
+		return fmt.Errorf("marshaling config: %w", err)
+	}
+
+	return os.WriteFile(configPath, out, 0644)
+}
+
+func resolveOmdrBinary() string {
+	if exe, err := os.Executable(); err == nil {
+		return exe
+	}
+	return "omdr"
+}
+
+func sanitizeServerKey(key string) string {
+	r := strings.NewReplacer("/", "-", "@", "-")
+	return r.Replace(key)
+}
+
+func needsCmdWrapper(command string) bool {
+	lc := strings.ToLower(command)
+	return lc == "npx" || lc == "npm" || lc == "node"
 }

@@ -11,9 +11,10 @@ import (
 )
 
 var (
-	cfgFile  string
-	verbose  bool
-	noBanner bool
+	cfgFile    string
+	verbose    bool
+	noBanner   bool
+	jsonOutput bool
 )
 
 var rootCmd = &cobra.Command{
@@ -22,7 +23,7 @@ var rootCmd = &cobra.Command{
 	Long:  "Discover, install, and manage MCP servers from the Open MCP Directory.",
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		clilogger.SetVerbose(verbose)
-		if !noBanner && cmd.Name() != "version" && cmd.Name() != "help" {
+		if !noBanner && !jsonOutput && cmd.Name() != "version" && cmd.Name() != "help" {
 			branding.ShowBanner()
 		}
 	},
@@ -37,6 +38,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.omdr/config.yaml)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
 	rootCmd.PersistentFlags().BoolVar(&noBanner, "no-banner", false, "disable banner display")
+	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "output in JSON format")
 }
 
 func initConfig() {

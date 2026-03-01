@@ -11,13 +11,13 @@ help:
 	@echo ""
 
 build:
-	go build -o bin/omdr ./cmd/omdr-cli
+	go build -o bin/omdr ./cmd/omdr
 
 test:
 	go test -v ./...
 
 install:
-	go install ./cmd/omdr-cli
+	go install ./cmd/omdr
 
 clean:
 	rm -rf bin/ dist/

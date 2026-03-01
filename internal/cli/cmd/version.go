@@ -9,8 +9,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var jsonOutput bool
-
 var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Show version information",
@@ -38,6 +36,5 @@ var versionCmd = &cobra.Command{
 }
 
 func init() {
-	versionCmd.Flags().BoolVar(&jsonOutput, "json", false, "output in JSON format")
 	rootCmd.AddCommand(versionCmd)
 }

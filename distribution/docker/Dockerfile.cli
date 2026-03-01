@@ -1,6 +1,8 @@
 FROM alpine:latest
 
-RUN apk --no-cache add ca-certificates
+ENV TZ=UTC
+
+RUN apk --no-cache add ca-certificates tzdata
 
 COPY omdr /usr/bin/omdr
 

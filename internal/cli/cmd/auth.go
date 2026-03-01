@@ -343,6 +343,5 @@ func init() {
 	authCmd.AddCommand(authLogoutCmd)
 	authCmd.AddCommand(authStatusCmd)
 
-	// TODO: Add device-flow flag to login command (pending `api` implementation)
-	// authLoginCmd.Flags().Bool("device-flow", false, "Use GitHub device flow (no browser required)")
+	authLoginCmd.Flags().Bool("device-flow", false, "Use GitHub device flow (no browser required)")
 }

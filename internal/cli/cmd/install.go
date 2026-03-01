@@ -140,7 +140,7 @@ var installCmd = &cobra.Command{
 		}
 
 		if len(clients) == 0 {
-			return fmt.Errorf("no MCP clients detected. Use --config-path to specify a custom config file, or install Claude Desktop, Cursor, or VS Code with MCP extension")
+			return fmt.Errorf("no MCP clients detected. Use --config-path to specify a custom config file, or install Claude Desktop, Cursor, VS Code, Windsurf, Zed, Cline, Claude Code, or Codex")
 		}
 
 		// Filter by target client if specified
@@ -381,7 +381,7 @@ func installHosted(mgr *config.Manager, server entity.Server, version entity.Ser
 
 func init() {
 	rootCmd.AddCommand(installCmd)
-	installCmd.Flags().StringVar(&targetClient, "client", "", "Target specific client (claude, cursor, vscode)")
+	installCmd.Flags().StringVar(&targetClient, "client", "", "Target specific client (claude, cursor, vscode, windsurf, zed, cline, claude-code, codex)")
 	installCmd.Flags().StringVar(&configPath, "config-path", "", "Custom MCP config file path (e.g., ~/.config/Code/User/mcp.json)")
 	installCmd.Flags().BoolVar(&hosted, "hosted", false, "Install as a hosted server (runs on OMDR infrastructure)")
 }

@@ -19,15 +19,16 @@ import (
 )
 
 var (
-	dryRun          bool
-	deploymentModel string
-	artifactPath    string
-	githubRepo      string
-	githubToken     string
-	selfHostedURL   string
-	pricingModel    string
-	pricePerCall    int64
-	monthlyPrice    int64
+	dryRun           bool
+	deploymentModel  string
+	artifactPath     string
+	githubRepo       string
+	githubToken      string
+	selfHostedURL    string
+	pricingModel     string
+	pricePerCall     int64
+	monthlyPrice     int64
+	publishNamespace string
 )
 
 var publishCmd = &cobra.Command{
@@ -106,6 +107,18 @@ var publishCmd = &cobra.Command{
 		// Submit to API
 		fmt.Println("Publishing to registry...")
 
+		// Resolve namespace: use --namespace flag, or fetch user's default namespace
+		ns := publishNamespace
+		if ns == "" {
+			var userInfo struct {
+				Username string `json:"username"`
+			}
+			if err := apiClient.Get(cmd.Context(), "/api/v1/users/me", &userInfo); err != nil {
+				return fmt.Errorf("failed to resolve namespace (use --namespace flag): %w", err)
+			}
+			ns = userInfo.Username
+		}
+
 		publishReq := struct {
 			Namespace       string          `json:"namespace"`
 			Name            string          `json:"name"`
@@ -122,7 +135,7 @@ var publishCmd = &cobra.Command{
 			PricePerCall    int64           `json:"price_per_call,omitempty"`
 			MonthlyPrice    int64           `json:"monthly_price,omitempty"`
 		}{
-			Namespace:       manifest.Name,
+			Namespace:       ns,
 			Name:            manifest.Name,
 			Description:     manifest.Description,
 			SourceURL:       manifest.Repository,
@@ -147,7 +160,7 @@ var publishCmd = &cobra.Command{
 			publishReq.DeploymentModel = "hosted_omdr"
 			fmt.Printf("Uploading artifact: %s\n", artifactPath)
 
-			artifactURL, artifactType, err := uploadArtifact(cmd.Context(), apiClient, artifactPath)
+			artifactURL, artifactType, err := uploadArtifact(cmd.Context(), apiClient, ns, manifest.Name, artifactPath)
 			if err != nil {
 				return fmt.Errorf("uploading artifact: %w", err)
 			}
@@ -244,9 +257,10 @@ func init() {
 	publishCmd.Flags().StringVar(&pricingModel, "pricing", "free", "Pricing model: free, per_call, subscription")
 	publishCmd.Flags().Int64Var(&pricePerCall, "price-per-call", 0, "Price per call in cents")
 	publishCmd.Flags().Int64Var(&monthlyPrice, "monthly-price", 0, "Monthly subscription price in cents")
+	publishCmd.Flags().StringVar(&publishNamespace, "namespace", "", "Namespace to publish under (defaults to your username)")
 }
 
-func uploadArtifact(ctx context.Context, apiClient *client.Client, artifactPath string) (string, string, error) {
+func uploadArtifact(ctx context.Context, apiClient *client.Client, namespace, name, artifactPath string) (string, string, error) {
 	file, err := os.Open(artifactPath)
 	if err != nil {
 		return "", "", fmt.Errorf("opening artifact file: %w", err)
@@ -289,7 +303,7 @@ func uploadArtifact(ctx context.Context, apiClient *client.Client, artifactPath 
 		ArtifactType string `json:"artifact_type"`
 	}
 
-	if err := apiClient.PostMultipart(ctx, "/api/v1/artifacts/upload", writer.FormDataContentType(), body, &uploadResp); err != nil {
+	if err := apiClient.PostMultipart(ctx, fmt.Sprintf("/api/v1/servers/%s/%s/artifacts", namespace, name), writer.FormDataContentType(), body, &uploadResp); err != nil {
 		return "", "", fmt.Errorf("uploading artifact: %w", err)
 	}
 

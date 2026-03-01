@@ -122,7 +122,7 @@ func checkMCPClients() []CheckResult {
 			Name:       "MCP Clients",
 			Status:     "WARNING",
 			Message:    "No MCP clients detected",
-			Suggestion: "Install Claude Desktop, Cursor, or VS Code with MCP extension to use OMDR",
+			Suggestion: "Install Claude Desktop, Cursor, VS Code, Windsurf, Zed, Cline, Claude Code, or Codex to use OMDR",
 		})
 	} else {
 		for _, client := range clients {
@@ -144,7 +144,6 @@ func checkMCPClients() []CheckResult {
 }
 
 func detectClientVersion(client detector.MCPClient) string {
-	// Try to detect version based on client type
 	switch client.Type {
 	case detector.ClientTypeClaude:
 		return detectClaudeVersion()
@@ -152,8 +151,30 @@ func detectClientVersion(client detector.MCPClient) string {
 		return detectCursorVersion()
 	case detector.ClientTypeVSCode:
 		return detectVSCodeVersion()
+	case detector.ClientTypeWindsurf:
+		return detectBinaryVersion("windsurf", "--version")
+	case detector.ClientTypeZed:
+		return detectBinaryVersion("zed", "--version")
+	case detector.ClientTypeCline:
+		return "extension"
+	case detector.ClientTypeClaudeCode:
+		return detectBinaryVersion("claude", "--version")
+	case detector.ClientTypeCodex:
+		return detectBinaryVersion("codex", "--version")
 	}
 	return ""
+}
+
+func detectBinaryVersion(binary, flag string) string {
+	cmd := exec.Command(binary, flag)
+	output, err := cmd.Output()
+	if err == nil {
+		lines := strings.Split(string(output), "\n")
+		if len(lines) > 0 {
+			return strings.TrimSpace(lines[0])
+		}
+	}
+	return "installed"
 }
 
 func detectClaudeVersion() string {
