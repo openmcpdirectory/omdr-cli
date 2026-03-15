@@ -63,11 +63,14 @@ var installCmd = &cobra.Command{
 		clilogger.Verbose("API URL: %s", apiURL)
 		clilogger.Verbose("Request path: /api/v1/servers/%s/%s", namespace, name)
 
+		// API returns ServerDetailResponse: embedded server fields at top level,
+		// plus manifest, versions[], paid_services[], fork_info.
 		var serverResp struct {
-			Server       entity.Server        `json:"server"`
-			Version      entity.ServerVersion `json:"version"`
-			PaidServices []entity.PaidService `json:"paid_services,omitempty"`
-			ForkInfo     *entity.ForkInfo     `json:"fork_info,omitempty"`
+			entity.Server
+			Manifest     json.RawMessage        `json:"manifest"`
+			Versions     []entity.ServerVersion `json:"versions"`
+			PaidServices []*entity.PaidService  `json:"paid_services,omitempty"`
+			ForkInfo     *entity.ForkInfo       `json:"fork_info,omitempty"`
 		}
 
 		path := fmt.Sprintf("/api/v1/servers/%s/%s", namespace, name)
@@ -75,7 +78,15 @@ var installCmd = &cobra.Command{
 			return fmt.Errorf("fetching server: %w", err)
 		}
 
-		clilogger.Verbose("Server fetched: %s/%s version %s", serverResp.Server.Namespace, serverResp.Server.Name, serverResp.Version.Version)
+		// Build a ServerVersion from the response for downstream use.
+		latestVersion := entity.ServerVersion{
+			Manifest: serverResp.Manifest,
+		}
+		if len(serverResp.Versions) > 0 {
+			latestVersion = serverResp.Versions[0]
+		}
+
+		clilogger.Verbose("Server fetched: %s/%s version %s", serverResp.Namespace, serverResp.Name, latestVersion.Version)
 
 		// Display paid service warnings if detected
 		if len(serverResp.PaidServices) > 0 {
@@ -92,11 +103,11 @@ var installCmd = &cobra.Command{
 
 			// Prompt for confirmation
 			fmt.Print("\nDo you want to continue with the installation? (y/N): ")
-			var response string
-			fmt.Scanln(&response)
-			response = strings.ToLower(strings.TrimSpace(response))
+			var resp string
+			fmt.Scanln(&resp)
+			resp = strings.ToLower(strings.TrimSpace(resp))
 
-			if response != "y" && response != "yes" {
+			if resp != "y" && resp != "yes" {
 				fmt.Println("Installation cancelled.")
 				return nil
 			}
@@ -116,14 +127,21 @@ var installCmd = &cobra.Command{
 
 		// Extract auth method if available
 		authMethod := ""
-		if serverResp.Server.AuthMethod != nil {
-			authMethod = *serverResp.Server.AuthMethod
+		if serverResp.AuthMethod != nil {
+			authMethod = *serverResp.AuthMethod
 			clilogger.Verbose("Server auth method: %s", authMethod)
 		}
 
 		// Parse manifest to check runtime requirements
+		manifestData := latestVersion.Manifest
+		if len(manifestData) == 0 {
+			manifestData = serverResp.Manifest
+		}
 		var manifest mcpspec.MCPManifest
-		if err := json.Unmarshal(serverResp.Version.Manifest, &manifest); err != nil {
+		if len(manifestData) == 0 {
+			return fmt.Errorf("server has no manifest data")
+		}
+		if err := json.Unmarshal(manifestData, &manifest); err != nil {
 			return fmt.Errorf("parsing manifest: %w", err)
 		}
 
@@ -159,7 +177,7 @@ var installCmd = &cobra.Command{
 		// Check if hosted installation is requested or required
 		if hosted {
 			fmt.Println("\nInstalling as hosted server...")
-			return installHosted(mgr, serverResp.Server, serverResp.Version, manifest, clients, authMethod)
+			return installHosted(mgr, serverResp.Server, latestVersion, manifest, clients, authMethod)
 		}
 
 		// Check runtime requirements for local installation
@@ -193,7 +211,7 @@ var installCmd = &cobra.Command{
 
 		for _, c := range clients {
 			fmt.Printf("\nConfiguring %s...\n", c.Name)
-			if err := patcher.PatchConfig(c, serverResp.Version); err != nil {
+			if err := patcher.PatchConfig(c, latestVersion); err != nil {
 				fmt.Fprintf(os.Stderr, "  Failed to configure %s: %v\n", c.Name, err)
 				lastErr = err
 				continue
@@ -214,8 +232,8 @@ var installCmd = &cobra.Command{
 			fmt.Println("✓ Installation successful!")
 		}
 
-		fmt.Printf("\nInstalled: %s/%s@%s\n", serverResp.Server.Namespace, serverResp.Server.Name, serverResp.Version.Version)
-		fmt.Printf("Description: %s\n", serverResp.Server.Description)
+		fmt.Printf("\nInstalled: %s/%s@%s\n", serverResp.Namespace, serverResp.Name, latestVersion.Version)
+		fmt.Printf("Description: %s\n", serverResp.Description)
 
 		if len(manifest.Tools) > 0 {
 			fmt.Printf("Tools: %d\n", len(manifest.Tools))

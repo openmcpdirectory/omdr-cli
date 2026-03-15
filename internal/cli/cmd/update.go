@@ -71,15 +71,19 @@ var updateCmd = &cobra.Command{
 }
 
 func checkServerUpdate(ctx context.Context, apiClient *client.Client, serverName string) (bool, error) {
+	namespace, name := parsePackageName(serverName)
+
 	var serverInfo struct {
-		LatestVersion string `json:"latest_version"`
+		Versions []struct {
+			Version string `json:"version"`
+		} `json:"versions"`
 	}
-	if err := apiClient.Get(ctx, fmt.Sprintf("/api/v1/servers/%s", serverName), &serverInfo); err != nil {
+	if err := apiClient.Get(ctx, fmt.Sprintf("/api/v1/servers/%s/%s", namespace, name), &serverInfo); err != nil {
 		return false, err
 	}
-	// If the API returned a version, an update may be available.
+	// If the API returned versions, an update may be available.
 	// Full version comparison would require storing the installed version locally.
-	return serverInfo.LatestVersion != "", nil
+	return len(serverInfo.Versions) > 0, nil
 }
 
 func init() {

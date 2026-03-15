@@ -190,17 +190,20 @@ of the manifest. Use 'omdr init' to generate one interactively.`,
 
 		fmt.Println("Publishing to registry...")
 
+		// The API returns the server entity at the top level for regular publishes,
+		// or {"message":"...", "server":..., "build_job_id":"..."} for hosted builds.
+		// We use a struct that handles both: embedded fields for direct, plus
+		// a Server field for the hosted-build wrapper.
 		var publishResp struct {
-			Server struct {
-				ID          string `json:"id"`
-				Namespace   string `json:"namespace"`
-				Name        string `json:"name"`
-				Description string `json:"description"`
-				TrustScore  int    `json:"trust_score"`
-			} `json:"server"`
-			Version struct {
-				Version string `json:"version"`
-			} `json:"version"`
+			// Direct (non-hosted) response fields:
+			ID          string `json:"id"`
+			Namespace   string `json:"namespace"`
+			Name        string `json:"name"`
+			Description string `json:"description"`
+			TrustScore  int    `json:"trust_score"`
+			// Hosted-build wrapper:
+			Message    string `json:"message,omitempty"`
+			BuildJobID string `json:"build_job_id,omitempty"`
 		}
 
 		if err := apiClient.Post(cmd.Context(), "/api/v1/servers", publishReq, &publishResp); err != nil {
@@ -243,17 +246,36 @@ of the manifest. Use 'omdr init' to generate one interactively.`,
 
 		// Display success result
 		fmt.Println("\n✓ Successfully published!")
-		fmt.Printf("\nServer: %s/%s@%s\n", publishResp.Server.Namespace, publishResp.Server.Name, publishResp.Version.Version)
-		fmt.Printf("Description: %s\n", publishResp.Server.Description)
-		fmt.Printf("Trust Score: %d/100\n", publishResp.Server.TrustScore)
-		fmt.Printf("Server ID: %s\n", publishResp.Server.ID)
+
+		respNS := publishResp.Namespace
+		if respNS == "" {
+			respNS = publishReq.Namespace
+		}
+		respName := publishResp.Name
+		if respName == "" {
+			respName = publishReq.Name
+		}
+
+		fmt.Printf("\nServer: %s/%s@%s\n", respNS, respName, publishReq.Version)
+		if publishResp.Description != "" {
+			fmt.Printf("Description: %s\n", publishResp.Description)
+		}
+		if publishResp.TrustScore > 0 {
+			fmt.Printf("Trust Score: %d/100\n", publishResp.TrustScore)
+		}
+		if publishResp.ID != "" {
+			fmt.Printf("Server ID: %s\n", publishResp.ID)
+		}
+		if publishResp.BuildJobID != "" {
+			fmt.Printf("Build Job: %s (queued)\n", publishResp.BuildJobID)
+		}
 
 		// Display registry URL
-		registryURL := fmt.Sprintf("%s/servers/%s/%s", apiURL, publishResp.Server.Namespace, publishResp.Server.Name)
+		registryURL := fmt.Sprintf("%s/servers/%s/%s", apiURL, respNS, respName)
 		fmt.Printf("\nView in registry: %s\n", registryURL)
 
 		fmt.Println("\nUsers can now install your server with:")
-		fmt.Printf("  omdr install %s/%s\n", publishResp.Server.Namespace, publishResp.Server.Name)
+		fmt.Printf("  omdr install %s/%s\n", respNS, respName)
 
 		return nil
 	},
