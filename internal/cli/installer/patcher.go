@@ -1,6 +1,7 @@
 package installer
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -81,6 +82,8 @@ func (p *ConfigPatcher) RemoveServerFromConfig(client detector.MCPClient, server
 		return removeFromClaudeCode(serverKey)
 	case detector.ClientTypeCodex:
 		return removeFromCodexTOML(client.ConfigPath, serverKey)
+	case detector.ClientTypeZed:
+		return removeFromZedConfig(client.ConfigPath, serverKey)
 	default:
 		return removeFromJSONConfig(client, serverKey)
 	}
@@ -92,6 +95,8 @@ func (p *ConfigPatcher) patchClientConfig(client detector.MCPClient, serverKey, 
 		return patchClaudeCode(serverKey, command, args, env)
 	case detector.ClientTypeCodex:
 		return patchCodexTOML(client.ConfigPath, serverKey, command, args, env)
+	case detector.ClientTypeZed:
+		return patchZedConfig(client.ConfigPath, serverKey, command, args, env)
 	default:
 		return patchJSONConfig(client, serverKey, command, args, env)
 	}
@@ -312,6 +317,150 @@ func removeFromCodexTOML(configPath, serverKey string) error {
 	}
 
 	return os.WriteFile(configPath, out, 0644)
+}
+
+// stripJSONCComments removes // and /* */ comments from JSONC data.
+// It correctly handles strings so comment sequences inside strings are preserved.
+func stripJSONCComments(data []byte) []byte {
+	var buf bytes.Buffer
+	i := 0
+	n := len(data)
+	for i < n {
+		if data[i] == '"' {
+			// String: copy as-is, handling backslash escapes
+			buf.WriteByte(data[i])
+			i++
+			for i < n {
+				if data[i] == '\\' && i+1 < n {
+					buf.WriteByte(data[i])
+					buf.WriteByte(data[i+1])
+					i += 2
+				} else if data[i] == '"' {
+					buf.WriteByte(data[i])
+					i++
+					break
+				} else {
+					buf.WriteByte(data[i])
+					i++
+				}
+			}
+		} else if i+1 < n && data[i] == '/' && data[i+1] == '/' {
+			// Line comment: skip to end of line
+			i += 2
+			for i < n && data[i] != '\n' {
+				i++
+			}
+		} else if i+1 < n && data[i] == '/' && data[i+1] == '*' {
+			// Block comment: skip to */
+			i += 2
+			for i+1 < n && !(data[i] == '*' && data[i+1] == '/') {
+				i++
+			}
+			i += 2
+		} else {
+			buf.WriteByte(data[i])
+			i++
+		}
+	}
+	return buf.Bytes()
+}
+
+// patchZedConfig adds an MCP server to Zed's settings.json.
+// Zed uses JSONC (JSON with comments) and requires the nested command format:
+//
+//	"context_servers": { "name": { "command": { "path": "...", "args": [...] } } }
+func patchZedConfig(configPath, serverKey, command string, args []string, env map[string]string) error {
+	configDir := filepath.Dir(configPath)
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return fmt.Errorf("creating config directory: %w", err)
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("reading config: %w", err)
+	}
+
+	var config map[string]interface{}
+	if len(data) > 0 {
+		clean := stripJSONCComments(data)
+		if err := json.Unmarshal(clean, &config); err != nil {
+			return fmt.Errorf("parsing config: %w", err)
+		}
+	} else {
+		config = make(map[string]interface{})
+	}
+
+	if len(data) > 0 {
+		backupPath := fmt.Sprintf("%s.backup.%d", configPath, time.Now().Unix())
+		if err := os.WriteFile(backupPath, data, 0644); err != nil {
+			return fmt.Errorf("creating backup: %w", err)
+		}
+	}
+
+	servers, ok := config["context_servers"].(map[string]interface{})
+	if !ok {
+		servers = make(map[string]interface{})
+	}
+
+	cmd := command
+	finalArgs := args
+	if runtime.GOOS == "windows" && needsCmdWrapper(command) {
+		cmd = "cmd"
+		finalArgs = append([]string{"/c", command}, args...)
+	}
+
+	cmdObj := map[string]interface{}{
+		"path": cmd,
+		"args": finalArgs,
+	}
+	if len(env) > 0 {
+		cmdObj["env"] = env
+	}
+
+	servers[sanitizeServerKey(serverKey)] = map[string]interface{}{
+		"command": cmdObj,
+	}
+	config["context_servers"] = servers
+
+	output, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshaling config: %w", err)
+	}
+
+	return os.WriteFile(configPath, output, 0644)
+}
+
+func removeFromZedConfig(configPath, serverKey string) error {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("reading config: %w", err)
+	}
+
+	clean := stripJSONCComments(data)
+	var config map[string]interface{}
+	if err := json.Unmarshal(clean, &config); err != nil {
+		return fmt.Errorf("parsing config: %w", err)
+	}
+
+	backupPath := fmt.Sprintf("%s.backup.%d", configPath, time.Now().Unix())
+	if err := os.WriteFile(backupPath, data, 0644); err != nil {
+		return fmt.Errorf("creating backup: %w", err)
+	}
+
+	if servers, ok := config["context_servers"].(map[string]interface{}); ok {
+		delete(servers, sanitizeServerKey(serverKey))
+		config["context_servers"] = servers
+	}
+
+	output, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshaling config: %w", err)
+	}
+
+	return os.WriteFile(configPath, output, 0644)
 }
 
 func resolveOmdrBinary() string {

@@ -226,6 +226,10 @@ var installCmd = &cobra.Command{
 			return fmt.Errorf("failed to configure any clients: %w", lastErr)
 		}
 
+		// Track install count on the registry (best-effort, non-blocking)
+		trackPath := fmt.Sprintf("/api/v1/servers/%s/%s/install", namespace, name)
+		_ = apiClient.Post(cmd.Context(), trackPath, nil, nil)
+
 		if successCount < len(clients) {
 			fmt.Printf("⚠ Partially installed: %d/%d clients configured\n", successCount, len(clients))
 		} else {
