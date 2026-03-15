@@ -20,37 +20,33 @@ import (
 
 var (
 	dryRun           bool
-	deploymentModel  string
 	artifactPath     string
-	githubRepo       string
 	githubToken      string
-	selfHostedURL    string
-	pricingModel     string
-	pricePerCall     int64
-	monthlyPrice     int64
 	publishNamespace string
 )
 
 var publishCmd = &cobra.Command{
 	Use:   "publish",
 	Short: "Publish an MCP server to the registry",
-	Long:  "Publish your MCP server to the OMDR registry by reading the local mcp.json manifest",
+	Long: `Publish your MCP server to the OMDR registry by reading the local
+omdr.json (or omdr.toml / mcp.json) manifest.
+
+Deployment mode, pricing, and hosting are read from the "omdr" section
+of the manifest. Use 'omdr init' to generate one interactively.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Read local mcp.json manifest
-		manifestPath := "mcp.json"
+		dir, _ := os.Getwd()
+		manifest, err := mcpspec.LoadManifest(dir)
+		if err != nil {
+			return fmt.Errorf("loading manifest: %w\nRun 'omdr init' to create one", err)
+		}
+
 		if verbose {
-			fmt.Printf("Reading manifest from %s...\n", manifestPath)
+			fmt.Printf("Loaded manifest from %s\n", manifest.SourceFile)
 		}
 
-		manifestData, err := os.ReadFile(manifestPath)
-		if err != nil {
-			return fmt.Errorf("failed to read mcp.json: %w\nMake sure mcp.json exists in the current directory", err)
-		}
-
-		// Validate manifest locally before API call
+		// Validate.
 		fmt.Println("Validating manifest...")
-		manifest, err := mcpspec.ValidateManifestJSON(manifestData)
-		if err != nil {
+		if err := mcpspec.ValidateManifest(manifest); err != nil {
 			if validationErrs, ok := err.(mcpspec.ValidationErrors); ok {
 				fmt.Fprintln(os.Stderr, "Manifest validation failed:")
 				for _, ve := range validationErrs {
@@ -63,31 +59,42 @@ var publishCmd = &cobra.Command{
 			}
 			return fmt.Errorf("manifest validation failed: %w", err)
 		}
-
 		fmt.Println("✓ Manifest is valid")
 
-		// Handle dry-run mode (skip auth check and API call)
+		// Derive deployment info from OMDR extension.
+		deploymentModel := "local"
+		pricingModel := "free"
+		var pricePerCall, monthlyPrice int64
+
+		if ext := manifest.OMDR; ext != nil {
+			if ext.Deployment != "" {
+				deploymentModel = string(ext.Deployment)
+			}
+			if ext.Pricing != nil {
+				pricingModel = string(ext.Pricing.Model)
+				pricePerCall = int64(ext.Pricing.PerCallCents)
+				monthlyPrice = int64(ext.Pricing.MonthlyCents)
+			}
+		}
+
+		// Dry-run: stop early.
 		if dryRun {
 			fmt.Println("\n✓ Dry-run successful!")
-			fmt.Println("Manifest is valid and ready to publish")
-			fmt.Printf("\nServer: %s/%s@%s\n", manifest.Name, manifest.Name, manifest.Version)
-			fmt.Printf("Description: %s\n", manifest.Description)
-			if manifest.Author != "" {
-				fmt.Printf("Author: %s\n", manifest.Author)
-			}
-			if manifest.License != "" {
-				fmt.Printf("License: %s\n", manifest.License)
+			fmt.Printf("\nServer: %s@%s\n", manifest.Name, manifest.Version)
+			fmt.Printf("Deployment: %s\n", deploymentModel)
+			fmt.Printf("Pricing: %s\n", pricingModel)
+			if manifest.Description != "" {
+				fmt.Printf("Description: %s\n", manifest.Description)
 			}
 			fmt.Println("\nRun without --dry-run to publish")
 			return nil
 		}
 
-		// Check authentication (required for actual publish)
+		// Auth check.
 		mgr, err := config.NewManager()
 		if err != nil {
 			return fmt.Errorf("initializing config manager: %w", err)
 		}
-
 		token, err := mgr.Get(tokenKey)
 		if err != nil || token == "" {
 			fmt.Fprintln(os.Stderr, "Authentication required to publish servers")
@@ -95,19 +102,15 @@ var publishCmd = &cobra.Command{
 			return fmt.Errorf("not authenticated")
 		}
 
-		// Get API client
+		// API client.
 		apiURL := viper.GetString("api_url")
 		if apiURL == "" {
 			apiURL = "https://cli.omdr.dev"
 		}
-
 		apiClient := client.NewClient(apiURL)
 		apiClient.SetToken(token)
 
-		// Submit to API
-		fmt.Println("Publishing to registry...")
-
-		// Resolve namespace: use --namespace flag, or fetch user's default namespace
+		// Resolve namespace.
 		ns := publishNamespace
 		if ns == "" {
 			var userInfo struct {
@@ -117,6 +120,12 @@ var publishCmd = &cobra.Command{
 				return fmt.Errorf("failed to resolve namespace (use --namespace flag): %w", err)
 			}
 			ns = userInfo.Username
+		}
+
+		// Serialise full manifest to send as JSON payload.
+		manifestData, err := json.Marshal(manifest)
+		if err != nil {
+			return fmt.Errorf("serialising manifest: %w", err)
 		}
 
 		publishReq := struct {
@@ -147,35 +156,39 @@ var publishCmd = &cobra.Command{
 			MonthlyPrice:    monthlyPrice,
 		}
 
-		if githubRepo != "" {
-			publishReq.DeploymentModel = "hosted_omdr"
-			publishReq.ArtifactType = "docker"
-			publishReq.GitHubURL = githubRepo
-			publishReq.GitHubToken = githubToken
-			fmt.Printf("Publishing GitHub repo: %s\n", githubRepo)
-			if githubToken != "" {
-				fmt.Println("✓ Using provided GitHub token for private repo access")
+		// Fill hosting details from OMDR extension.
+		if manifest.OMDR != nil && manifest.OMDR.Hosting != nil {
+			h := manifest.OMDR.Hosting
+			if h.ArtifactType != "" {
+				publishReq.ArtifactType = string(h.ArtifactType)
 			}
-		} else if artifactPath != "" {
-			publishReq.DeploymentModel = "hosted_omdr"
-			fmt.Printf("Uploading artifact: %s\n", artifactPath)
+			if h.GitHubURL != "" {
+				publishReq.GitHubURL = h.GitHubURL
+			}
+			if h.EndpointURL != "" {
+				publishReq.ArtifactURL = h.EndpointURL
+			}
+		}
 
+		// CLI flag overrides for GitHub token.
+		if githubToken != "" {
+			publishReq.GitHubToken = githubToken
+		}
+
+		// Artifact upload for hosted deployments.
+		if artifactPath != "" {
+			publishReq.DeploymentModel = "hosted"
+			fmt.Printf("Uploading artifact: %s\n", artifactPath)
 			artifactURL, artifactType, err := uploadArtifact(cmd.Context(), apiClient, ns, manifest.Name, artifactPath)
 			if err != nil {
 				return fmt.Errorf("uploading artifact: %w", err)
 			}
-
 			publishReq.ArtifactType = artifactType
 			publishReq.ArtifactURL = artifactURL
 			fmt.Printf("✓ Artifact uploaded: %s\n", artifactURL)
-		} else if selfHostedURL != "" {
-			publishReq.DeploymentModel = "self_hosted"
-			publishReq.ArtifactType = "endpoint"
-			publishReq.ArtifactURL = selfHostedURL
-			fmt.Printf("Publishing self-hosted endpoint: %s\n", selfHostedURL)
-		} else if deploymentModel == "" {
-			publishReq.DeploymentModel = "local"
 		}
+
+		fmt.Println("Publishing to registry...")
 
 		var publishResp struct {
 			Server struct {
@@ -249,14 +262,8 @@ var publishCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(publishCmd)
 	publishCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate manifest without publishing")
-	publishCmd.Flags().StringVar(&deploymentModel, "deployment", "local", "Deployment model: local, hosted_omdr, self_hosted")
 	publishCmd.Flags().StringVar(&artifactPath, "artifact", "", "Path to artifact (Docker image, WASM, etc.) for hosted deployment")
-	publishCmd.Flags().StringVar(&githubRepo, "github", "", "GitHub repository URL for OMDR-hosted deployment")
 	publishCmd.Flags().StringVar(&githubToken, "github-token", "", "GitHub personal access token for private repos")
-	publishCmd.Flags().StringVar(&selfHostedURL, "self-hosted", "", "Self-hosted endpoint URL")
-	publishCmd.Flags().StringVar(&pricingModel, "pricing", "free", "Pricing model: free, per_call, subscription")
-	publishCmd.Flags().Int64Var(&pricePerCall, "price-per-call", 0, "Price per call in cents")
-	publishCmd.Flags().Int64Var(&monthlyPrice, "monthly-price", 0, "Monthly subscription price in cents")
 	publishCmd.Flags().StringVar(&publishNamespace, "namespace", "", "Namespace to publish under (defaults to your username)")
 }
 

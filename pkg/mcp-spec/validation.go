@@ -10,7 +10,6 @@ import (
 )
 
 var (
-	// semverRegex matches semantic versioning format (MAJOR.MINOR.PATCH with optional pre-release and build metadata)
 	semverRegex = regexp.MustCompile(`^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$`)
 
 	validate *validator.Validate
@@ -18,8 +17,6 @@ var (
 
 func init() {
 	validate = validator.New()
-
-	// Register custom semver validator
 	validate.RegisterValidation("semver", validateSemver)
 }
 
@@ -37,7 +34,6 @@ func (v ValidationErrors) Error() string {
 	if len(v) == 0 {
 		return "validation failed"
 	}
-
 	var msgs []string
 	for _, err := range v {
 		msgs = append(msgs, fmt.Sprintf("%s: %s", err.Field, err.Message))
@@ -45,7 +41,8 @@ func (v ValidationErrors) Error() string {
 	return strings.Join(msgs, "; ")
 }
 
-// ValidateManifest validates an MCP manifest against the schema
+// ValidateManifest validates an MCP manifest against the schema, including
+// OMDR extension cross-field rules.
 func ValidateManifest(manifest *MCPManifest) error {
 	if manifest == nil {
 		return ValidationErrors{{
@@ -55,26 +52,95 @@ func ValidateManifest(manifest *MCPManifest) error {
 	}
 
 	err := validate.Struct(manifest)
-	if err == nil {
-		return nil
-	}
-
-	// Convert validator errors to structured validation errors
-	validationErrs, ok := err.(validator.ValidationErrors)
-	if !ok {
-		return fmt.Errorf("validation failed: %w", err)
-	}
 
 	var errors ValidationErrors
-	for _, fieldErr := range validationErrs {
-		errors = append(errors, ValidationError{
-			Field:   getFieldPath(fieldErr),
-			Message: getErrorMessage(fieldErr),
-			Value:   fieldErr.Value(),
+
+	if err != nil {
+		validationErrs, ok := err.(validator.ValidationErrors)
+		if !ok {
+			return fmt.Errorf("validation failed: %w", err)
+		}
+		for _, fieldErr := range validationErrs {
+			errors = append(errors, ValidationError{
+				Field:   getFieldPath(fieldErr),
+				Message: getErrorMessage(fieldErr),
+				Value:   fieldErr.Value(),
+			})
+		}
+	}
+
+	if manifest.OMDR != nil {
+		errors = append(errors, validateOMDRExtension(manifest.OMDR)...)
+	}
+
+	if len(errors) > 0 {
+		return errors
+	}
+	return nil
+}
+
+func validateOMDRExtension(ext *OMDRExtension) ValidationErrors {
+	var errs ValidationErrors
+
+	if ext.Deployment == DeployHosted && ext.Hosting == nil {
+		errs = append(errs, ValidationError{
+			Field:   "omdr.hosting",
+			Message: "hosting config is required when deployment is \"hosted\"",
 		})
 	}
 
-	return errors
+	if ext.Deployment == DeploySelfHosted {
+		if ext.Hosting == nil || ext.Hosting.EndpointURL == "" {
+			errs = append(errs, ValidationError{
+				Field:   "omdr.hosting.endpoint_url",
+				Message: "endpoint_url is required when deployment is \"self_hosted\"",
+			})
+		}
+	}
+
+	if ext.Hosting != nil && ext.Deployment == DeployHosted && ext.Hosting.ArtifactType == "" {
+		errs = append(errs, ValidationError{
+			Field:   "omdr.hosting.artifact_type",
+			Message: "artifact_type is required for hosted deployment",
+		})
+	}
+
+	if ext.Hosting != nil && ext.Hosting.ArtifactType == ArtifactDocker {
+		if ext.Hosting.Dockerfile == "" && ext.Hosting.GitHubURL == "" {
+			errs = append(errs, ValidationError{
+				Field:   "omdr.hosting.dockerfile",
+				Message: "dockerfile or github_url is required for docker artifact",
+			})
+		}
+	}
+
+	if ext.Pricing != nil {
+		switch ext.Pricing.Model {
+		case PricingPerCall:
+			if ext.Pricing.PerCallCents <= 0 {
+				errs = append(errs, ValidationError{
+					Field:   "omdr.pricing.per_call_cents",
+					Message: "per_call_cents must be > 0 when model is \"per_call\"",
+				})
+			}
+		case PricingSubscription:
+			if ext.Pricing.MonthlyCents <= 0 {
+				errs = append(errs, ValidationError{
+					Field:   "omdr.pricing.monthly_cents",
+					Message: "monthly_cents must be > 0 when model is \"subscription\"",
+				})
+			}
+		}
+	}
+
+	if ext.Scaling != nil && ext.Scaling.MaxInstances > 0 && ext.Scaling.MinInstances > ext.Scaling.MaxInstances {
+		errs = append(errs, ValidationError{
+			Field:   "omdr.scaling.min_instances",
+			Message: "min_instances cannot exceed max_instances",
+		})
+	}
+
+	return errs
 }
 
 // ValidateManifestJSON validates a manifest from JSON bytes
@@ -101,26 +167,20 @@ func ValidateManifestJSON(data []byte) (*MCPManifest, error) {
 	return &manifest, nil
 }
 
-// validateSemver is a custom validator for semantic versioning
 func validateSemver(fl validator.FieldLevel) bool {
 	version := fl.Field().String()
 	return semverRegex.MatchString(version)
 }
 
-// getFieldPath extracts the JSON field path from a validator field error
 func getFieldPath(fe validator.FieldError) string {
-	// Convert struct field name to JSON field name (lowercase first letter)
 	field := fe.Field()
 	if len(field) > 0 {
 		field = strings.ToLower(field[:1]) + field[1:]
 	}
 
-	// Handle nested fields
 	namespace := fe.Namespace()
 	if idx := strings.Index(namespace, "."); idx != -1 {
-		// Remove the struct name prefix
 		path := namespace[idx+1:]
-		// Convert to JSON-style path
 		parts := strings.Split(path, ".")
 		for i, part := range parts {
 			if len(part) > 0 {
@@ -133,7 +193,6 @@ func getFieldPath(fe validator.FieldError) string {
 	return field
 }
 
-// getErrorMessage generates a human-readable error message
 func getErrorMessage(fe validator.FieldError) string {
 	switch fe.Tag() {
 	case "required":
