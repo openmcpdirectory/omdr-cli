@@ -7,6 +7,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/openmcpdirectory/omdr-cli/internal/cli/client"
+	"github.com/openmcpdirectory/omdr-cli/internal/cli/defaults"
 	"github.com/openmcpdirectory/omdr-cli/internal/entity"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -30,7 +31,7 @@ var searchCmd = &cobra.Command{
 		// Get API client
 		apiURL := viper.GetString("api_url")
 		if apiURL == "" {
-			apiURL = "https://cli.omdr.dev"
+			apiURL = defaults.RegistryURL
 		}
 
 		apiClient := client.NewClient(apiURL)

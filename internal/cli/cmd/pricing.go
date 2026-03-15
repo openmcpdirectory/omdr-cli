@@ -6,6 +6,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/openmcpdirectory/omdr-cli/internal/cli/client"
+	"github.com/openmcpdirectory/omdr-cli/internal/cli/defaults"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -17,7 +18,7 @@ var pricingCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		apiURL := viper.GetString("api_url")
 		if apiURL == "" {
-			apiURL = "https://cli.omdr.dev"
+			apiURL = defaults.CLIURL
 		}
 		apiClient := client.NewClient(apiURL)
 

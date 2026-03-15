@@ -83,7 +83,7 @@ brews:
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     folder: Formula
-    homepage: https://github.com/openmcpdirectory/omdr
+    homepage: https://openmcpdirectory.com
     description: "CLI for the Open MCP Directory - discover, install, and manage MCP servers"
     license: MIT
     test: |

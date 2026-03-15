@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/openmcpdirectory/omdr-cli/internal/cli/client"
+	"github.com/openmcpdirectory/omdr-cli/internal/cli/defaults"
 	"github.com/openmcpdirectory/omdr-cli/internal/cli/registry"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -42,7 +43,7 @@ var updateCmd = &cobra.Command{
 
 		apiURL := viper.GetString("api_url")
 		if apiURL == "" {
-			apiURL = "https://cli.omdr.dev"
+			apiURL = defaults.RegistryURL
 		}
 		apiClient := client.NewClient(apiURL)
 

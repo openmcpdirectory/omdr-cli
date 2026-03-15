@@ -7,6 +7,7 @@ import (
 
 	"github.com/openmcpdirectory/omdr-cli/internal/cli/client"
 	cliconfig "github.com/openmcpdirectory/omdr-cli/internal/cli/config"
+	"github.com/openmcpdirectory/omdr-cli/internal/cli/defaults"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -28,7 +29,7 @@ var invoicesCmd = &cobra.Command{
 
 		apiURL := viper.GetString("api_url")
 		if apiURL == "" {
-			apiURL = "https://cli.omdr.dev"
+			apiURL = defaults.CLIURL
 		}
 		apiClient := client.NewClient(apiURL)
 		apiClient.SetToken(token)

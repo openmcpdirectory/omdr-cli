@@ -20,7 +20,11 @@ var (
 var rootCmd = &cobra.Command{
 	Use:   "omdr",
 	Short: "OMDR - Open MCP Directory CLI",
-	Long:  "Discover, install, and manage MCP servers from the Open MCP Directory.",
+	Long: `Discover, install, and manage MCP servers from the Open MCP Directory.
+
+  Website:  https://openmcpdirectory.com
+  Docs:     https://docs.omdr.dev
+  Registry: https://registry.omdr.dev`,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		clilogger.SetVerbose(verbose)
 		if !noBanner && !jsonOutput && cmd.Name() != "version" && cmd.Name() != "help" {

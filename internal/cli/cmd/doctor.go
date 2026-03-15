@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/openmcpdirectory/omdr-cli/internal/cli/client"
+	"github.com/openmcpdirectory/omdr-cli/internal/cli/defaults"
 	"github.com/openmcpdirectory/omdr-cli/internal/cli/detector"
 	"github.com/openmcpdirectory/omdr-cli/internal/cli/runtime"
 	"github.com/spf13/cobra"
@@ -290,9 +291,8 @@ func checkRuntimes() []CheckResult {
 func checkNetworkConnectivity() CheckResult {
 	apiURL := viper.GetString("api_url")
 	if apiURL == "" {
-		apiURL = "https://cli.omdr.dev"
+		apiURL = defaults.CLIURL
 	}
-
 	apiClient := client.NewClient(apiURL)
 
 	// Try to reach a simple endpoint (health check or servers list)

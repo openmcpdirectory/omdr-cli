@@ -10,6 +10,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/openmcpdirectory/omdr-cli/internal/cli/client"
 	"github.com/openmcpdirectory/omdr-cli/internal/cli/config"
+	"github.com/openmcpdirectory/omdr-cli/internal/cli/defaults"
 	"github.com/pkg/browser"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -43,7 +44,7 @@ var authLoginCmd = &cobra.Command{
 func deviceFlowLogin(ctx context.Context) error {
 	apiURL := viper.GetString("api_url")
 	if apiURL == "" {
-		apiURL = "https://cli.omdr.dev"
+		apiURL = defaults.CLIURL
 	}
 
 	apiClient := client.NewClient(apiURL)
@@ -141,7 +142,7 @@ func deviceFlowLogin(ctx context.Context) error {
 func browserLogin(ctx context.Context) error {
 	apiURL := viper.GetString("api_url")
 	if apiURL == "" {
-		apiURL = "https://cli.omdr.dev"
+		apiURL = defaults.CLIURL
 	}
 
 	apiClient := client.NewClient(apiURL)
@@ -281,7 +282,7 @@ var authStatusCmd = &cobra.Command{
 		// Try to get username from API
 		apiURL := viper.GetString("api_url")
 		if apiURL == "" {
-			apiURL = "https://cli.omdr.dev"
+			apiURL = defaults.CLIURL
 		}
 
 		apiClient := client.NewClient(apiURL)

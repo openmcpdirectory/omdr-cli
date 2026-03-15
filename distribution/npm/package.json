@@ -25,6 +25,7 @@
     "url": "https://github.com/openmcpdirectory/omdr-cli/issues"
   },
   "homepage": "https://openmcpdirectory.com",
+  "docs": "https://docs.omdr.dev",
   "os": [
     "darwin",
     "linux",

@@ -13,6 +13,7 @@ import (
 
 	"github.com/openmcpdirectory/omdr-cli/internal/cli/client"
 	"github.com/openmcpdirectory/omdr-cli/internal/cli/config"
+	"github.com/openmcpdirectory/omdr-cli/internal/cli/defaults"
 	mcpspec "github.com/openmcpdirectory/omdr-cli/pkg/mcp-spec"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -105,7 +106,7 @@ of the manifest. Use 'omdr init' to generate one interactively.`,
 		// API client.
 		apiURL := viper.GetString("api_url")
 		if apiURL == "" {
-			apiURL = "https://cli.omdr.dev"
+			apiURL = defaults.RegistryURL
 		}
 		apiClient := client.NewClient(apiURL)
 		apiClient.SetToken(token)

@@ -8,6 +8,7 @@ import (
 
 	"github.com/openmcpdirectory/omdr-cli/internal/cli/client"
 	"github.com/openmcpdirectory/omdr-cli/internal/cli/config"
+	"github.com/openmcpdirectory/omdr-cli/internal/cli/defaults"
 	"github.com/openmcpdirectory/omdr-cli/internal/cli/detector"
 	"github.com/openmcpdirectory/omdr-cli/internal/cli/installer"
 	clilogger "github.com/openmcpdirectory/omdr-cli/internal/cli/logger"
@@ -41,7 +42,7 @@ var installCmd = &cobra.Command{
 		// Get API client
 		apiURL := viper.GetString("api_url")
 		if apiURL == "" {
-			apiURL = "https://cli.omdr.dev"
+			apiURL = defaults.RegistryURL
 		}
 
 		apiClient := client.NewClient(apiURL)
