@@ -33,31 +33,27 @@ var invoicesCmd = &cobra.Command{
 		apiClient := client.NewClient(apiURL)
 		apiClient.SetToken(token)
 
-		var invoices struct {
-			Items []struct {
-				ID        string  `json:"id"`
-				Amount    float64 `json:"amount"`
-				Currency  string  `json:"currency"`
-				Status    string  `json:"status"`
-				Period    string  `json:"period"`
-				CreatedAt string  `json:"created_at"`
-				PaidAt    string  `json:"paid_at,omitempty"`
-			} `json:"items"`
+		var invoices []struct {
+			ID         string `json:"id"`
+			Amount     int    `json:"amount"`
+			Status     string `json:"status"`
+			CreatedAt  string `json:"createdAt"`
+			PaidAt     string `json:"paidAt,omitempty"`
+			InvoiceURL string `json:"invoiceUrl,omitempty"`
 		}
 		if err := apiClient.Get(cmd.Context(), "/api/v1/users/me/invoices", &invoices); err != nil {
 			return fmt.Errorf("fetching invoices: %w", err)
 		}
 
-		if len(invoices.Items) == 0 {
+		if len(invoices) == 0 {
 			fmt.Println("No invoices found.")
 			return nil
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-		fmt.Fprintln(w, "DATE\tAMOUNT\tSTATUS\tPERIOD")
-		for _, inv := range invoices.Items {
-			fmt.Fprintf(w, "%s\t%.2f %s\t%s\t%s\n",
-				inv.CreatedAt, inv.Amount, inv.Currency, inv.Status, inv.Period)
+		fmt.Fprintln(w, "DATE\tAMOUNT\tSTATUS")
+		for _, inv := range invoices {
+			fmt.Fprintf(w, "%s\t%d\t%s\n", inv.CreatedAt, inv.Amount, inv.Status)
 		}
 		w.Flush()
 

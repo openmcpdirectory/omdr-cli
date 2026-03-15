@@ -34,35 +34,35 @@ var creditsCmd = &cobra.Command{
 		apiClient.SetToken(token)
 
 		var balance struct {
-			Balance  float64 `json:"balance"`
-			Currency string  `json:"currency"`
+			UserID  string `json:"user_id"`
+			Balance int64  `json:"balance"`
 		}
 		if err := apiClient.Get(cmd.Context(), "/api/v1/credits/balance", &balance); err != nil {
 			return fmt.Errorf("fetching balance: %w", err)
 		}
 
-		fmt.Printf("Credit Balance: %.2f %s\n\n", balance.Balance, balance.Currency)
+		fmt.Printf("Credit Balance: %d credits\n\n", balance.Balance)
 
-		var transactions struct {
-			Items []struct {
-				ID          string  `json:"id"`
-				Amount      float64 `json:"amount"`
-				Type        string  `json:"type"`
-				Description string  `json:"description"`
-				CreatedAt   string  `json:"created_at"`
-			} `json:"items"`
+		var txnResp struct {
+			Transactions []struct {
+				ID          string `json:"id"`
+				Amount      int64  `json:"amount"`
+				Type        string `json:"type"`
+				Description string `json:"description"`
+				CreatedAt   string `json:"created_at"`
+			} `json:"transactions"`
 		}
-		if err := apiClient.Get(cmd.Context(), "/api/v1/credits/transactions?limit=10", &transactions); err != nil {
+		if err := apiClient.Get(cmd.Context(), "/api/v1/credits/transactions?limit=10", &txnResp); err != nil {
 			// Non-fatal: balance was shown
 			return nil
 		}
 
-		if len(transactions.Items) > 0 {
+		if len(txnResp.Transactions) > 0 {
 			fmt.Println("Recent Transactions:")
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
 			fmt.Fprintln(w, "DATE\tTYPE\tAMOUNT\tDESCRIPTION")
-			for _, t := range transactions.Items {
-				fmt.Fprintf(w, "%s\t%s\t%.2f\t%s\n", t.CreatedAt, t.Type, t.Amount, t.Description)
+			for _, t := range txnResp.Transactions {
+				fmt.Fprintf(w, "%s\t%s\t%d\t%s\n", t.CreatedAt, t.Type, t.Amount, t.Description)
 			}
 			w.Flush()
 		}

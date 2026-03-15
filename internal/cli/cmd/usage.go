@@ -33,33 +33,38 @@ var usageCmd = &cobra.Command{
 		apiClient := client.NewClient(apiURL)
 		apiClient.SetToken(token)
 
-		var usage struct {
-			Period struct {
-				Start string `json:"start"`
-				End   string `json:"end"`
-			} `json:"period"`
-			Requests   int     `json:"requests"`
-			Compute    float64 `json:"compute_seconds"`
-			Bandwidth  float64 `json:"bandwidth_mb"`
-			CreditUsed float64 `json:"credit_used"`
-			RateLimit  int     `json:"rate_limit"`
-			RateUsed   int     `json:"rate_used"`
+		// API returns []UsageDataPoint: [{date, calls, cost}, ...]
+		var dataPoints []struct {
+			Date  string `json:"date"`
+			Calls int    `json:"calls"`
+			Cost  int    `json:"cost"` // in cents
 		}
-		if err := apiClient.Get(cmd.Context(), "/api/v1/users/me/usage", &usage); err != nil {
+		if err := apiClient.Get(cmd.Context(), "/api/v1/users/me/usage", &dataPoints); err != nil {
 			return fmt.Errorf("fetching usage: %w", err)
 		}
 
-		fmt.Printf("Billing Period: %s to %s\n\n", usage.Period.Start, usage.Period.End)
+		if len(dataPoints) == 0 {
+			fmt.Println("No usage data found for the current period.")
+			return nil
+		}
+
+		// Aggregate totals
+		totalCalls := 0
+		totalCost := 0
+		for _, dp := range dataPoints {
+			totalCalls += dp.Calls
+			totalCost += dp.Cost
+		}
+
+		fmt.Printf("Usage (%d days):\n\n", len(dataPoints))
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-		fmt.Fprintln(w, "METRIC\tVALUE")
-		fmt.Fprintf(w, "API Requests\t%d\n", usage.Requests)
-		fmt.Fprintf(w, "Compute\t%.1f seconds\n", usage.Compute)
-		fmt.Fprintf(w, "Bandwidth\t%.1f MB\n", usage.Bandwidth)
-		fmt.Fprintf(w, "Credits Used\t%.2f\n", usage.CreditUsed)
-		if usage.RateLimit > 0 {
-			fmt.Fprintf(w, "Rate Limit\t%d / %d req/min\n", usage.RateUsed, usage.RateLimit)
+		fmt.Fprintln(w, "DATE\tCALLS\tCOST")
+		for _, dp := range dataPoints {
+			fmt.Fprintf(w, "%s\t%d\t$%.2f\n", dp.Date, dp.Calls, float64(dp.Cost)/100)
 		}
+		fmt.Fprintln(w, "---\t---\t---")
+		fmt.Fprintf(w, "Total\t%d\t$%.2f\n", totalCalls, float64(totalCost)/100)
 		w.Flush()
 
 		return nil

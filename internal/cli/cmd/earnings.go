@@ -27,19 +27,25 @@ var earningsSummaryCmd = &cobra.Command{
 		}
 
 		var summary struct {
-			TotalEarned    float64 `json:"total_earned"`
-			TotalPaid      float64 `json:"total_paid"`
-			PendingBalance float64 `json:"pending_balance"`
-			Currency       string  `json:"currency"`
+			TotalEarnings    int    `json:"totalEarnings"`
+			PendingPayout    int    `json:"pendingPayout"`
+			MonthlyEarnings  int    `json:"monthlyEarnings"`
+			LastPayoutAmount int    `json:"lastPayoutAmount"`
+			LastPayoutDate   string `json:"lastPayoutDate,omitempty"`
+			PayoutConfigured bool   `json:"payoutConfigured"`
 		}
 		if err := apiClient.Get(cmd.Context(), "/api/v1/users/me/earnings/summary", &summary); err != nil {
 			return fmt.Errorf("fetching earnings: %w", err)
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-		fmt.Fprintf(w, "Total Earned\t%.2f %s\n", summary.TotalEarned, summary.Currency)
-		fmt.Fprintf(w, "Total Paid\t%.2f %s\n", summary.TotalPaid, summary.Currency)
-		fmt.Fprintf(w, "Pending\t%.2f %s\n", summary.PendingBalance, summary.Currency)
+		fmt.Fprintf(w, "Total Earnings\t%d credits\n", summary.TotalEarnings)
+		fmt.Fprintf(w, "Pending Payout\t%d credits\n", summary.PendingPayout)
+		fmt.Fprintf(w, "Monthly Earnings\t%d credits\n", summary.MonthlyEarnings)
+		fmt.Fprintf(w, "Payout Configured\t%v\n", summary.PayoutConfigured)
+		if summary.LastPayoutAmount > 0 {
+			fmt.Fprintf(w, "Last Payout\t%d credits on %s\n", summary.LastPayoutAmount, summary.LastPayoutDate)
+		}
 		w.Flush()
 
 		return nil
@@ -55,28 +61,29 @@ var earningsPayoutsCmd = &cobra.Command{
 			return err
 		}
 
-		var payouts struct {
-			Items []struct {
-				ID        string  `json:"id"`
-				Amount    float64 `json:"amount"`
-				Currency  string  `json:"currency"`
-				Status    string  `json:"status"`
-				CreatedAt string  `json:"created_at"`
-			} `json:"items"`
+		var payoutsResp struct {
+			Payouts []struct {
+				ID        string `json:"id"`
+				Amount    int    `json:"amount"`
+				Status    string `json:"status"`
+				CreatedAt string `json:"createdAt"`
+				PaidAt    string `json:"paidAt,omitempty"`
+			} `json:"payouts"`
+			Total int `json:"total"`
 		}
-		if err := apiClient.Get(cmd.Context(), "/api/v1/users/me/earnings/payouts", &payouts); err != nil {
+		if err := apiClient.Get(cmd.Context(), "/api/v1/users/me/earnings/payouts", &payoutsResp); err != nil {
 			return fmt.Errorf("fetching payouts: %w", err)
 		}
 
-		if len(payouts.Items) == 0 {
+		if len(payoutsResp.Payouts) == 0 {
 			fmt.Println("No payouts yet.")
 			return nil
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
 		fmt.Fprintln(w, "DATE\tAMOUNT\tSTATUS")
-		for _, p := range payouts.Items {
-			fmt.Fprintf(w, "%s\t%.2f %s\t%s\n", p.CreatedAt, p.Amount, p.Currency, p.Status)
+		for _, p := range payoutsResp.Payouts {
+			fmt.Fprintf(w, "%s\t%d credits\t%s\n", p.CreatedAt, p.Amount, p.Status)
 		}
 		w.Flush()
 
