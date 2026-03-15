@@ -183,14 +183,13 @@ omdr pricing           # Show subscription tiers and pricing
 
 ### Publishing (Creators)
 ```bash
-omdr publish                                    # Publish local server (free)
-omdr publish --deployment hosted_omdr \
-  --artifact ./server.wasm \
-  --pricing per_call --price-per-call 10        # Publish hosted WASM ($0.10/call)
-omdr publish --github https://github.com/user/repo  # Publish from GitHub (public)
-omdr publish --github https://github.com/user/private-repo \
-  --github-token ghp_xxxxx                      # Publish from private GitHub repo
-omdr publish --self-hosted https://api.example.com  # Publish self-hosted endpoint
+omdr init                                       # Interactive wizard — creates omdr.json or omdr.toml
+omdr validate                                   # Validate local manifest (auto-detects file)
+omdr validate ./omdr.json                       # Validate a specific path
+omdr publish                                    # Publish from local manifest (free/hosted/self-hosted)
+omdr publish --dry-run                          # Validate + preview — no submission
+omdr publish --github-token ghp_xxxxx          # Pass GitHub token for private repo builds
+omdr publish --namespace @yourname             # Override namespace
 omdr earnings summary                           # View earnings summary
 omdr earnings payouts                           # View payout history
 ```
@@ -344,7 +343,7 @@ make install
 ├── /cmd/omdr              # Main CLI entrypoint
 ├── /internal/cli
 │   ├── /cmd               # Cobra commands (auth, install, search, list, uninstall, update,
-│   │                      #   publish, credits, usage, invoices, pricing, earnings, doctor, version)
+│   │                      #   init, validate, publish, credits, usage, invoices, pricing, earnings, doctor, version)
 │   ├── /client            # HTTP client for registry API
 │   ├── /config            # Config file management
 │   ├── /detector          # MCP client detection (8 clients)
@@ -357,7 +356,7 @@ make install
 │   ├── /runtime           # Runtime requirement checks
 │   ├── /ui                # Output helpers (Success, Error, Table, JSON)
 │   └── /logger            # Logging utilities
-├── /pkg/mcp-spec          # MCP manifest types (shared with main repo)
+├── /pkg/mcp-spec          # MCP/OMDR manifest types (omdr.json + omdr.toml loader, OMDR extension, validation)
 ├── /distribution
 │   ├── /docker            # Dockerfile.cli
 │   ├── /installers        # Shell/PowerShell install scripts
@@ -366,13 +365,20 @@ make install
 └── /internal/entity       # Domain entities (Server, Version, etc.)
 ```
 
-## For Creators
+### For Creators
 
 ### Publishing Your MCP Server
 
-#### Option 1: Local Server (Free)
+#### Step 1: Create your manifest
 
-1. Create `mcp.json` manifest:
+Run the interactive wizard to scaffold an `omdr.json` (or `omdr.toml`) in your project:
+
+```bash
+omdr init
+```
+
+Or create it manually. The manifest is a superset of the [standard MCP manifest](https://spec.modelcontextprotocol.io/) — standard fields sit at the root, OMDR-specific config lives under the `omdr` key:
+
 ```json
 {
   "name": "my-tool",
@@ -384,90 +390,106 @@ make install
     "args": ["index.js"]
   },
   "tools": [...],
-  "resources": [...],
-  "prompts": [...]
+  "omdr": {
+    "version": "1",
+    "deployment": "hosted",
+    "hosting": {
+      "artifact_type": "docker",
+      "github_url": "https://github.com/yourname/mcp-server"
+    },
+    "pricing": {
+      "model": "per_call",
+      "per_call_cents": 10
+    },
+    "secrets": [
+      { "name": "API_KEY", "description": "Your API key", "required": true, "managed_by": "user" }
+    ],
+    "categories": ["ai", "productivity"]
+  }
 }
 ```
 
-2. Publish to registry:
-```bash
-omdr publish
+**TOML equivalent** (`omdr.toml` is also supported):
+
+```toml
+name = "my-tool"
+version = "1.0.0"
+description = "My awesome MCP server"
+
+[runtime]
+type = "node"
+command = "node"
+args = ["index.js"]
+
+[omdr]
+version = "1"
+deployment = "hosted"
+
+[omdr.hosting]
+artifact_type = "docker"
+github_url = "https://github.com/yourname/mcp-server"
+
+[omdr.pricing]
+model = "per_call"
+per_call_cents = 10
+
+[[omdr.secrets]]
+name = "API_KEY"
+description = "Your API key"
+required = true
+managed_by = "user"
 ```
 
-Users install locally (free):
-```bash
-omdr install @yourname/my-tool
-```
+**Manifest file resolution order:** `omdr.json` → `omdr.toml` → `mcp.json`
 
-#### Option 2: OMDR-Hosted Server (Paid) 🚧 Beta
-
-**Upload WASM artifact:**
-```bash
-omdr publish --deployment hosted_omdr \
-  --artifact ./server.wasm \
-  --pricing per_call --price-per-call 10
-```
-
-**Build from GitHub (public repo):**
-```bash
-omdr publish --deployment hosted_omdr \
-  --github https://github.com/yourname/mcp-server \
-  --pricing per_call --price-per-call 10
-```
-
-**Build from GitHub (private repo):**
-```bash
-# Requires GitHub personal access token with 'repo' scope
-omdr publish --deployment hosted_omdr \
-  --github https://github.com/yourname/private-mcp-server \
-  --github-token ghp_xxxxxxxxxxxxx \
-  --pricing per_call --price-per-call 10
-```
-
-**Supported artifact types:**
-- `.wasm` - WebAssembly modules
-- `.tar`, `.tar.gz` - Docker images (coming soon)
-
-Users install hosted version:
-```bash
-omdr install --hosted @yourname/my-tool
-```
-
-#### Option 3: Self-Hosted Server (Paid)
-
-Host on your infrastructure, use OMDR for billing:
+#### Step 2: Validate
 
 ```bash
-omdr publish --deployment self_hosted \
-  --self-hosted https://api.yourserver.com \
-  --pricing per_call --price-per-call 10
+omdr validate          # auto-detects omdr.json / omdr.toml / mcp.json
+omdr validate ./omdr.json  # validate a specific file
 ```
 
-OMDR forwards requests to your endpoint after billing.
+#### Step 3: Publish
 
-### Deployment Model Comparison
+```bash
+omdr publish           # reads manifest, submits to registry
+omdr publish --dry-run # validate + preview without submitting
+```
 
-| Model | Hosting | Build | Pricing | Revenue Split |
-|-------|---------|-------|---------|---------------|
-| **Local** | User's machine | N/A | Free | N/A |
-| **OMDR-Hosted** | OMDR infrastructure | OMDR builds from GitHub or uploaded artifact | Per-call or subscription | Creator 90%, OMDR 10% |
-| **Self-Hosted** | Your infrastructure | You manage | Per-call or subscription | Creator 95%, OMDR 5% |
-| **Enterprise** | Enterprise infrastructure | Custom | Negotiated | Custom |
+For private GitHub repos add a token:
 
-### Tier Requirements
+```bash
+omdr publish --github-token ghp_xxxxx
+```
 
-- **Free tier**: Can only publish local servers
-- **Pro tier ($20/mo)**: Can publish local, OMDR-hosted, and self-hosted
-- **Enterprise**: All deployment models including private hosting
+Users install locally (free) or hosted (paid) based on the manifest's `omdr.deployment` value.
 
-### Monetization Options
+#### Deployment Modes
 
-- **Free**: No pricing, users install locally
-- **Per-call**: Charge per tool invocation (e.g., $0.10/call)
-- **Subscription**: Monthly fee for unlimited access (coming soon)
-- **Hybrid**: Base subscription + per-call overage (coming soon)
+| `omdr.deployment` | Hosting | Build | Required fields |
+|---|---|---|---|
+| `local` (default) | User's machine | None | none |
+| `hosted` | OMDR infrastructure | OMDR builds from `hosting.github_url` | `hosting.artifact_type` + `hosting.github_url` or `hosting.dockerfile` |
+| `self_hosted` | Your infrastructure | You manage | `hosting.endpoint_url` |
 
-### Receiving Payouts
+#### Artifact Types (`hosting.artifact_type`)
+
+| Value | Description |
+|---|---|
+| `docker` | Docker image built from `dockerfile` + `github_url` |
+| `wasm` | WebAssembly module |
+| `npm` | NPM package |
+| `python` | Python package |
+
+#### Pricing Models (`omdr.pricing.model`)
+
+| Value | Fields |
+|---|---|
+| `free` | none |
+| `per_call` | `per_call_cents` (> 0) |
+| `subscription` | `monthly_cents` (> 0) |
+
+#### Receiving Payouts
 
 Earnings are processed via Dodo Payments. Complete onboarding via the creator dashboard at [openmcpdirectory.com](https://openmcpdirectory.com).
 
